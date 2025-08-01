@@ -64,6 +64,18 @@ func (s *nudgeService) setupEventSubscriptions() {
 	if err != nil {
 		s.logger.Error("Failed to subscribe to TaskParsed events", zap.Error(err))
 	}
+
+	// Subscribe to TaskListRequested events from the chatbot
+	err = s.eventBus.Subscribe(events.TopicTaskListRequested, s.handleTaskListRequested)
+	if err != nil {
+		s.logger.Error("Failed to subscribe to TaskListRequested events", zap.Error(err))
+	}
+
+	// Subscribe to TaskActionRequested events from the chatbot
+	err = s.eventBus.Subscribe(events.TopicTaskActionRequested, s.handleTaskActionRequested)
+	if err != nil {
+		s.logger.Error("Failed to subscribe to TaskActionRequested events", zap.Error(err))
+	}
 }
 
 // CreateTask creates a new task
@@ -348,6 +360,150 @@ func (s *nudgeService) handleTaskParsed(event events.TaskParsed) {
 	}
 
 	s.logger.Info("Task created successfully from parsed event", zap.String("taskID", string(task.ID)))
+}
+
+// handleTaskListRequested handles TaskListRequested events from the chatbot
+func (s *nudgeService) handleTaskListRequested(event events.TaskListRequested) {
+	s.logger.Info("Handling TaskListRequested event",
+		zap.String("correlationID", event.CorrelationID),
+		zap.String("userID", event.UserID),
+		zap.String("chatID", event.ChatID))
+
+	// Get tasks for the user
+	filter := TaskFilter{
+		UserID: common.UserID(event.UserID),
+		Status: &[]common.TaskStatus{common.TaskStatusActive}[0], // Only active tasks
+	}
+
+	tasks, err := s.GetTasks(common.UserID(event.UserID), filter)
+	if err != nil {
+		s.logger.Error("Failed to get tasks for list request", zap.Error(err))
+		// Send error response
+		errorResponse := events.TaskListResponse{
+			Event:      events.NewEvent(),
+			UserID:     event.UserID,
+			ChatID:     event.ChatID,
+			Tasks:      []events.TaskSummary{},
+			TotalCount: 0,
+			HasMore:    false,
+		}
+		s.eventBus.Publish(events.TopicTaskListResponse, errorResponse)
+		return
+	}
+
+	// Convert tasks to TaskSummary format
+	taskSummaries := make([]events.TaskSummary, len(tasks))
+	for i, task := range tasks {
+		taskSummaries[i] = events.TaskSummary{
+			ID:          string(task.ID),
+			Title:       task.Title,
+			Description: task.Description,
+			DueDate:     task.DueDate,
+			Priority:    string(task.Priority),
+			Status:      string(task.Status),
+			IsOverdue:   task.IsOverdue(),
+		}
+	}
+
+	// Publish TaskListResponse event
+	response := events.TaskListResponse{
+		Event:      events.NewEvent(),
+		UserID:     event.UserID,
+		ChatID:     event.ChatID,
+		Tasks:      taskSummaries,
+		TotalCount: len(taskSummaries),
+		HasMore:    false, // Simple implementation - no pagination for now
+	}
+
+	err = s.eventBus.Publish(events.TopicTaskListResponse, response)
+	if err != nil {
+		s.logger.Error("Failed to publish TaskListResponse event", zap.Error(err))
+		return
+	}
+
+	s.logger.Info("TaskListResponse published successfully",
+		zap.String("userID", event.UserID),
+		zap.Int("taskCount", len(taskSummaries)))
+}
+
+// handleTaskActionRequested handles TaskActionRequested events from the chatbot
+func (s *nudgeService) handleTaskActionRequested(event events.TaskActionRequested) {
+	s.logger.Info("Handling TaskActionRequested event",
+		zap.String("correlationID", event.CorrelationID),
+		zap.String("userID", event.UserID),
+		zap.String("chatID", event.ChatID),
+		zap.String("taskID", event.TaskID),
+		zap.String("action", event.Action))
+
+	var err error
+	var message string
+	success := true
+
+	// Process the requested action
+	switch event.Action {
+	case "done", "complete":
+		err = s.UpdateTaskStatus(common.TaskID(event.TaskID), common.TaskStatusCompleted)
+		if err == nil {
+			message = "Task marked as completed successfully!"
+		} else {
+			message = "Failed to mark task as completed: " + err.Error()
+			success = false
+		}
+
+	case "delete":
+		err = s.DeleteTask(common.TaskID(event.TaskID))
+		if err == nil {
+			message = "Task deleted successfully!"
+		} else {
+			message = "Failed to delete task: " + err.Error()
+			success = false
+		}
+
+	case "snooze":
+		// Snooze for 1 hour by default
+		snoozeUntil := time.Now().Add(time.Hour)
+		err = s.SnoozeTask(common.TaskID(event.TaskID), snoozeUntil)
+		if err == nil {
+			message = "Task snoozed for 1 hour!"
+		} else {
+			message = "Failed to snooze task: " + err.Error()
+			success = false
+		}
+
+	default:
+		err = NewInvalidTaskActionError(event.Action)
+		message = "Invalid action: " + event.Action
+		success = false
+	}
+
+	if err != nil {
+		s.logger.Error("Failed to process task action",
+			zap.String("action", event.Action),
+			zap.String("taskID", event.TaskID),
+			zap.Error(err))
+	}
+
+	// Publish TaskActionResponse event
+	response := events.TaskActionResponse{
+		Event:   events.NewEvent(),
+		UserID:  event.UserID,
+		ChatID:  event.ChatID,
+		TaskID:  event.TaskID,
+		Action:  event.Action,
+		Success: success,
+		Message: message,
+	}
+
+	publishErr := s.eventBus.Publish(events.TopicTaskActionResponse, response)
+	if publishErr != nil {
+		s.logger.Error("Failed to publish TaskActionResponse event", zap.Error(publishErr))
+		return
+	}
+
+	s.logger.Info("TaskActionResponse published successfully",
+		zap.String("taskID", event.TaskID),
+		zap.String("action", event.Action),
+		zap.Bool("success", success))
 }
 
 // Additional service methods

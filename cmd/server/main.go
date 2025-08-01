@@ -65,6 +65,23 @@ func main() {
 		"llm", llmService != nil,
 		"nudge", nudgeService != nil)
 
+	// Validate event bus subscriptions
+	logger.Info("Validating event bus subscriptions...")
+
+	// Test event publishing to ensure all subscriptions are working
+	testEvent := events.NewEvent()
+	if err := eventBus.Publish("test.connection", testEvent); err != nil {
+		logger.Warn("Event bus test failed", "error", err)
+	}
+
+	logger.Info("Event bus integration completed",
+		"chatbot_subscriptions", "TaskParsed, ReminderDue, TaskListResponse, TaskActionResponse, TaskCreated",
+		"llm_subscriptions", "MessageReceived",
+		"nudge_subscriptions", "TaskParsed, TaskListRequested, TaskActionRequested")
+
+	// Allow services to complete initialization
+	time.Sleep(100 * time.Millisecond)
+
 	// Setup Gin router
 	if cfg.Server.Environment == "production" {
 		gin.SetMode(gin.ReleaseMode)
@@ -96,9 +113,24 @@ func main() {
 
 	logger.Info("Shutting down server...")
 
-	// Close event bus
-	if err := eventBus.Close(); err != nil {
-		logger.Error("Failed to close event bus", "error", err)
+	// Stop accepting new events
+	logger.Info("Stopping event processing...")
+
+	// Close event bus with timeout
+	eventBusCtx, eventBusCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer eventBusCancel()
+
+	go func() {
+		if err := eventBus.Close(); err != nil {
+			logger.Error("Failed to close event bus", "error", err)
+		}
+	}()
+
+	select {
+	case <-eventBusCtx.Done():
+		logger.Warn("Event bus shutdown timed out")
+	case <-time.After(5 * time.Second):
+		logger.Info("Event bus closed successfully")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

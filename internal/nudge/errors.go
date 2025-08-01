@@ -16,6 +16,7 @@ const (
 	ErrCodeReminderFailed    = "REMINDER_FAILED"
 	ErrCodeBusinessRule      = "BUSINESS_RULE_VIOLATION"
 	ErrCodeRepository        = "REPOSITORY_ERROR"
+	ErrCodeInvalidAction     = "INVALID_ACTION"
 )
 
 // NudgeError interface for nudge-specific errors
@@ -154,6 +155,28 @@ func (e RepositoryError) Unwrap() error {
 	return e.Cause
 }
 
+// InvalidTaskActionError represents invalid task action requests
+type InvalidTaskActionError struct {
+	Action  string
+	Details string
+}
+
+func (e InvalidTaskActionError) Error() string {
+	return fmt.Sprintf("invalid task action '%s': %s", e.Action, e.Details)
+}
+
+func (e InvalidTaskActionError) Code() string {
+	return ErrCodeInvalidAction
+}
+
+func (e InvalidTaskActionError) Message() string {
+	return e.Details
+}
+
+func (e InvalidTaskActionError) Temporary() bool {
+	return false
+}
+
 // Error wrapping utilities
 
 // WrapRepositoryError wraps an error as a RepositoryError
@@ -211,6 +234,14 @@ func NewReminderSchedulingError(taskID common.TaskID, message string, cause erro
 		TaskID:     taskID,
 		ErrMessage: message,
 		Cause:      cause,
+	}
+}
+
+// NewInvalidTaskActionError creates a new InvalidTaskActionError
+func NewInvalidTaskActionError(action string) error {
+	return InvalidTaskActionError{
+		Action:  action,
+		Details: "supported actions are: done, complete, delete, snooze",
 	}
 }
 

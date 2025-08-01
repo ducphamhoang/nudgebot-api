@@ -76,6 +76,24 @@ func (s *chatbotService) setupEventSubscriptions() {
 	if err != nil {
 		s.logger.Error("Failed to subscribe to ReminderDue events", zap.Error(err))
 	}
+
+	// Subscribe to TaskListResponse events from the nudge service
+	err = s.eventBus.Subscribe(events.TopicTaskListResponse, s.handleTaskListResponse)
+	if err != nil {
+		s.logger.Error("Failed to subscribe to TaskListResponse events", zap.Error(err))
+	}
+
+	// Subscribe to TaskActionResponse events from the nudge service
+	err = s.eventBus.Subscribe(events.TopicTaskActionResponse, s.handleTaskActionResponse)
+	if err != nil {
+		s.logger.Error("Failed to subscribe to TaskActionResponse events", zap.Error(err))
+	}
+
+	// Subscribe to TaskCreated events for confirmation messages
+	err = s.eventBus.Subscribe(events.TopicTaskCreated, s.handleTaskCreated)
+	if err != nil {
+		s.logger.Error("Failed to subscribe to TaskCreated events", zap.Error(err))
+	}
 }
 
 // SendMessage sends a text message to the specified chat
@@ -319,30 +337,9 @@ func (s *chatbotService) handleTaskParsed(event events.TaskParsed) {
 		zap.String("user_id", event.UserID),
 		zap.String("task_title", event.ParsedTask.Title))
 
-	// Create confirmation message with task action keyboard
-	confirmText := fmt.Sprintf("📋 <b>Task Created!</b>\n\n<b>Title:</b> %s\n<b>Priority:</b> %s",
-		event.ParsedTask.Title,
-		event.ParsedTask.Priority)
-
-	if event.ParsedTask.Description != "" {
-		confirmText += fmt.Sprintf("\n<b>Description:</b> %s", event.ParsedTask.Description)
-	}
-
-	if event.ParsedTask.DueDate != nil {
-		confirmText += fmt.Sprintf("\n<b>Due:</b> %s", event.ParsedTask.DueDate.Format("Jan 2, 2006 at 3:04 PM"))
-	}
-
-	if len(event.ParsedTask.Tags) > 0 {
-		confirmText += fmt.Sprintf("\n<b>Tags:</b> %s", strings.Join(event.ParsedTask.Tags, ", "))
-	}
-
-	// For now, we don't have a task ID, so we'll send without keyboard
-	err := s.SendMessage(common.ChatID(event.UserID), confirmText)
-	if err != nil {
-		s.logger.Error("Failed to send task confirmation",
-			zap.String("correlation_id", event.CorrelationID),
-			zap.Error(err))
-	}
+	// TaskCreated events will handle the confirmation message with proper task ID
+	// This handler is kept for future processing needs or logging
+	s.logger.Debug("Task parsing completed, waiting for TaskCreated event for confirmation")
 }
 
 // handleReminderDue handles ReminderDue events from the nudge service
@@ -377,6 +374,184 @@ func (s *chatbotService) handleReminderDue(event events.ReminderDue) {
 	err := s.SendMessageWithKeyboard(common.ChatID(event.ChatID), reminderText, domainKeyboard)
 	if err != nil {
 		s.logger.Error("Failed to send reminder",
+			zap.String("correlation_id", event.CorrelationID),
+			zap.Error(err))
+	}
+}
+
+// handleTaskListResponse handles TaskListResponse events from the nudge service
+func (s *chatbotService) handleTaskListResponse(event events.TaskListResponse) {
+	s.logger.Info("Handling TaskListResponse event",
+		zap.String("correlation_id", event.CorrelationID),
+		zap.String("user_id", event.UserID),
+		zap.String("chat_id", event.ChatID),
+		zap.Int("task_count", len(event.Tasks)))
+
+	var messageText string
+
+	if len(event.Tasks) == 0 {
+		messageText = "📝 <b>Your Task List</b>\n\nYou have no active tasks. Great job! 🎉\n\nSend me a message to create a new task."
+	} else {
+		messageText = fmt.Sprintf("📝 <b>Your Task List</b>\n\nYou have %d active task(s):\n\n", len(event.Tasks))
+
+		for i, task := range event.Tasks {
+			taskNumber := i + 1
+			priority := strings.ToUpper(string(task.Priority[:1])) + strings.ToLower(string(task.Priority[1:]))
+
+			// Format task entry
+			taskEntry := fmt.Sprintf("<b>%d.</b> %s\n   🏷 <i>%s Priority</i>", taskNumber, task.Title, priority)
+
+			if task.Description != "" {
+				taskEntry += fmt.Sprintf("\n   📝 %s", task.Description)
+			}
+
+			if task.DueDate != nil {
+				dueText := task.DueDate.Format("Jan 2, 15:04")
+				if task.IsOverdue {
+					taskEntry += fmt.Sprintf("\n   ⏰ <b>OVERDUE:</b> %s", dueText)
+				} else {
+					taskEntry += fmt.Sprintf("\n   📅 Due: %s", dueText)
+				}
+			}
+
+			messageText += taskEntry + "\n\n"
+		}
+
+		// Convert event tasks to keyboard task format
+		keyboardTasks := make([]TaskSummary, len(event.Tasks))
+		for i, task := range event.Tasks {
+			keyboardTasks[i] = TaskSummary{
+				ID:      common.TaskID(task.ID),
+				Title:   task.Title,
+				DueDate: task.DueDate,
+				Status:  task.Status,
+			}
+		}
+
+		// Create task list keyboard with actions for each task (simple pagination for now)
+		currentPage := 0
+		totalPages := 1
+		keyboard := s.keyboardBuilder.BuildTaskListKeyboard(keyboardTasks, currentPage, totalPages)
+
+		// Convert to domain keyboard format
+		domainKeyboard := InlineKeyboard{
+			Buttons: make([][]InlineKeyboardButton, len(keyboard.InlineKeyboard)),
+		}
+
+		for i, row := range keyboard.InlineKeyboard {
+			domainKeyboard.Buttons[i] = make([]InlineKeyboardButton, len(row))
+			for j, button := range row {
+				domainKeyboard.Buttons[i][j] = InlineKeyboardButton{
+					Text:         button.Text,
+					CallbackData: *button.CallbackData,
+				}
+			}
+		}
+
+		// Send message with keyboard
+		err := s.SendMessageWithKeyboard(common.ChatID(event.ChatID), messageText, domainKeyboard)
+		if err != nil {
+			s.logger.Error("Failed to send task list with keyboard",
+				zap.String("correlation_id", event.CorrelationID),
+				zap.Error(err))
+		}
+		return
+	}
+
+	// Send simple message without keyboard for empty list
+	err := s.SendMessage(common.ChatID(event.ChatID), messageText)
+	if err != nil {
+		s.logger.Error("Failed to send task list message",
+			zap.String("correlation_id", event.CorrelationID),
+			zap.Error(err))
+	}
+}
+
+// handleTaskActionResponse handles TaskActionResponse events from the nudge service
+func (s *chatbotService) handleTaskActionResponse(event events.TaskActionResponse) {
+	s.logger.Info("Handling TaskActionResponse event",
+		zap.String("correlation_id", event.CorrelationID),
+		zap.String("user_id", event.UserID),
+		zap.String("chat_id", event.ChatID),
+		zap.String("task_id", event.TaskID),
+		zap.String("action", event.Action),
+		zap.Bool("success", event.Success))
+
+	var messageText string
+	var emoji string
+
+	// Set emoji and message based on action and success
+	if event.Success {
+		switch event.Action {
+		case "done", "complete":
+			emoji = "✅"
+			messageText = fmt.Sprintf("%s <b>Task Completed!</b>\n\n%s", emoji, event.Message)
+		case "delete":
+			emoji = "🗑️"
+			messageText = fmt.Sprintf("%s <b>Task Deleted!</b>\n\n%s", emoji, event.Message)
+		case "snooze":
+			emoji = "😴"
+			messageText = fmt.Sprintf("%s <b>Task Snoozed!</b>\n\n%s", emoji, event.Message)
+		default:
+			emoji = "✅"
+			messageText = fmt.Sprintf("%s <b>Action Completed!</b>\n\n%s", emoji, event.Message)
+		}
+	} else {
+		emoji = "❌"
+		messageText = fmt.Sprintf("%s <b>Action Failed</b>\n\n%s", emoji, event.Message)
+	}
+
+	err := s.SendMessage(common.ChatID(event.ChatID), messageText)
+	if err != nil {
+		s.logger.Error("Failed to send task action response",
+			zap.String("correlation_id", event.CorrelationID),
+			zap.Error(err))
+	}
+}
+
+// handleTaskCreated handles TaskCreated events from the nudge service
+func (s *chatbotService) handleTaskCreated(event events.TaskCreated) {
+	s.logger.Info("Handling TaskCreated event",
+		zap.String("correlation_id", event.CorrelationID),
+		zap.String("task_id", event.TaskID),
+		zap.String("user_id", event.UserID),
+		zap.String("task_title", event.Title))
+
+	// Create confirmation message with task details
+	confirmText := fmt.Sprintf("📋 <b>Task Created!</b>\n\n<b>Title:</b> %s\n<b>Priority:</b> %s",
+		event.Title,
+		event.Priority)
+
+	if event.DueDate != nil {
+		confirmText += fmt.Sprintf("\n<b>Due:</b> %s", event.DueDate.Format("Jan 2, 2006 at 3:04 PM"))
+	}
+
+	confirmText += fmt.Sprintf("\n<b>Created:</b> %s", event.CreatedAt.Format("Jan 2, 15:04"))
+
+	// Create action keyboard for immediate task actions
+	keyboard := s.keyboardBuilder.BuildTaskActionKeyboard(event.TaskID)
+
+	// Convert to domain keyboard format
+	domainKeyboard := InlineKeyboard{
+		Buttons: make([][]InlineKeyboardButton, len(keyboard.InlineKeyboard)),
+	}
+
+	for i, row := range keyboard.InlineKeyboard {
+		domainKeyboard.Buttons[i] = make([]InlineKeyboardButton, len(row))
+		for j, button := range row {
+			domainKeyboard.Buttons[i][j] = InlineKeyboardButton{
+				Text:         button.Text,
+				CallbackData: *button.CallbackData,
+			}
+		}
+	}
+
+	// Determine chat ID from user ID (for now they're the same in Telegram)
+	chatID := event.UserID
+
+	err := s.SendMessageWithKeyboard(common.ChatID(chatID), confirmText, domainKeyboard)
+	if err != nil {
+		s.logger.Error("Failed to send task creation confirmation",
 			zap.String("correlation_id", event.CorrelationID),
 			zap.Error(err))
 	}

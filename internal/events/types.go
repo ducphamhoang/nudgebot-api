@@ -105,6 +105,38 @@ type CommandExecuted struct {
 	ErrorMessage string `json:"error_message,omitempty"`
 }
 
+// TaskSummary represents a lightweight task representation for responses
+type TaskSummary struct {
+	ID          string     `json:"id" validate:"required"`
+	Title       string     `json:"title" validate:"required"`
+	Description string     `json:"description"`
+	DueDate     *time.Time `json:"due_date,omitempty"`
+	Priority    string     `json:"priority" validate:"required"`
+	Status      string     `json:"status" validate:"required"`
+	IsOverdue   bool       `json:"is_overdue"`
+}
+
+// TaskListResponse represents an event response to task list requests
+type TaskListResponse struct {
+	Event
+	UserID     string        `json:"user_id" validate:"required"`
+	ChatID     string        `json:"chat_id" validate:"required"`
+	Tasks      []TaskSummary `json:"tasks"`
+	TotalCount int           `json:"total_count"`
+	HasMore    bool          `json:"has_more"`
+}
+
+// TaskActionResponse represents an event response to task action requests
+type TaskActionResponse struct {
+	Event
+	UserID  string `json:"user_id" validate:"required"`
+	ChatID  string `json:"chat_id" validate:"required"`
+	TaskID  string `json:"task_id" validate:"required"`
+	Action  string `json:"action" validate:"required"`
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+}
+
 // Event topics constants
 const (
 	TopicMessageReceived     = "message.received"
@@ -116,4 +148,6 @@ const (
 	TopicTaskActionRequested = "task.action.requested"
 	TopicUserSessionStarted  = "user.session.started"
 	TopicCommandExecuted     = "command.executed"
+	TopicTaskListResponse    = "task.list.response"
+	TopicTaskActionResponse  = "task.action.response"
 )
