@@ -1,9 +1,15 @@
 package chatbot
 
 import (
+	"fmt"
+	"strconv"
+	"strings"
+
 	"nudgebot-api/internal/common"
+	"nudgebot-api/internal/config"
 	"nudgebot-api/internal/events"
 
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"go.uber.org/zap"
 )
 
@@ -17,21 +23,44 @@ type ChatbotService interface {
 
 // chatbotService implements the ChatbotService interface
 type chatbotService struct {
-	eventBus events.EventBus
-	logger   *zap.Logger
+	eventBus         events.EventBus
+	logger           *zap.Logger
+	provider         TelegramProvider
+	parser           *WebhookParser
+	keyboardBuilder  *KeyboardBuilder
+	commandProcessor *CommandProcessor
+	config           config.ChatbotConfig
 }
 
 // NewChatbotService creates a new instance of ChatbotService
-func NewChatbotService(eventBus events.EventBus, logger *zap.Logger) ChatbotService {
+func NewChatbotService(eventBus events.EventBus, logger *zap.Logger, cfg config.ChatbotConfig) (ChatbotService, error) {
+	// Create Telegram provider
+	provider, err := NewTelegramProvider(cfg, logger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create telegram provider: %w", err)
+	}
+
 	service := &chatbotService{
-		eventBus: eventBus,
-		logger:   logger,
+		eventBus:         eventBus,
+		logger:           logger,
+		provider:         provider,
+		parser:           NewWebhookParser(),
+		keyboardBuilder:  NewKeyboardBuilder(),
+		commandProcessor: NewCommandProcessor(eventBus, logger),
+		config:           cfg,
 	}
 
 	// Subscribe to relevant events
 	service.setupEventSubscriptions()
 
-	return service
+	// Setup webhook if configured
+	if cfg.WebhookURL != "" {
+		if err := provider.SetWebhook(cfg.WebhookURL); err != nil {
+			logger.Warn("Failed to set webhook", zap.Error(err))
+		}
+	}
+
+	return service, nil
 }
 
 // setupEventSubscriptions sets up event subscriptions for the chatbot service
@@ -51,82 +80,304 @@ func (s *chatbotService) setupEventSubscriptions() {
 
 // SendMessage sends a text message to the specified chat
 func (s *chatbotService) SendMessage(chatID common.ChatID, text string) error {
-	s.logger.Info("Sending message",
-		zap.String("chatID", string(chatID)),
-		zap.String("text", text))
+	s.logger.Debug("Sending message",
+		zap.String("chat_id", string(chatID)),
+		zap.Int("text_length", len(text)))
 
-	// TODO: Implement actual Telegram Bot API call
-	return nil
+	chatIDInt, err := strconv.ParseInt(string(chatID), 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid chat ID: %w", err)
+	}
+
+	return s.provider.SendMessage(chatIDInt, text)
 }
 
 // SendMessageWithKeyboard sends a message with an inline keyboard to the specified chat
 func (s *chatbotService) SendMessageWithKeyboard(chatID common.ChatID, text string, keyboard InlineKeyboard) error {
-	s.logger.Info("Sending message with keyboard",
-		zap.String("chatID", string(chatID)),
-		zap.String("text", text),
-		zap.Any("keyboard", keyboard))
+	s.logger.Debug("Sending message with keyboard",
+		zap.String("chat_id", string(chatID)),
+		zap.Int("text_length", len(text)),
+		zap.Int("keyboard_rows", len(keyboard.Buttons)))
 
-	// TODO: Implement actual Telegram Bot API call with keyboard
-	return nil
+	chatIDInt, err := strconv.ParseInt(string(chatID), 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid chat ID: %w", err)
+	}
+
+	// Convert domain keyboard to Telegram format
+	tgKeyboard := s.keyboardBuilder.ConvertDomainKeyboard(keyboard)
+
+	return s.provider.SendMessageWithKeyboard(chatIDInt, text, tgKeyboard)
 }
 
 // HandleWebhook processes incoming webhook data from Telegram
 func (s *chatbotService) HandleWebhook(webhookData []byte) error {
-	s.logger.Info("Handling webhook", zap.Int("dataSize", len(webhookData)))
+	correlationID := fmt.Sprintf("webhook_%d", len(webhookData))
+	s.logger.Debug("Handling webhook",
+		zap.String("correlation_id", correlationID),
+		zap.Int("data_size", len(webhookData)))
 
-	// TODO: Parse webhook data and extract message information
-	// For now, create a mock MessageReceived event
-	event := events.MessageReceived{
-		Event:       events.NewEvent(),
-		UserID:      "mock_user_id",
-		ChatID:      "mock_chat_id",
-		MessageText: "mock message text",
+	// Parse the webhook update
+	update, err := s.parser.ParseUpdate(webhookData)
+	if err != nil {
+		s.logger.Error("Failed to parse webhook update",
+			zap.String("correlation_id", correlationID),
+			zap.Error(err))
+		return WrapParsingError(err, "telegram_update")
 	}
 
-	return s.eventBus.Publish(events.TopicMessageReceived, event)
+	// Get correlation ID from update
+	correlationID = s.parser.BuildCorrelationID(update)
+
+	// Extract user and chat information
+	userID, err := s.parser.GetUserID(update)
+	if err != nil {
+		s.logger.Error("Failed to extract user ID",
+			zap.String("correlation_id", correlationID),
+			zap.Error(err))
+		return WrapParsingError(err, "user_id")
+	}
+
+	chatID, err := s.parser.GetChatID(update)
+	if err != nil {
+		s.logger.Error("Failed to extract chat ID",
+			zap.String("correlation_id", correlationID),
+			zap.Error(err))
+		return WrapParsingError(err, "chat_id")
+	}
+
+	// Determine the type of update and handle accordingly
+	messageType := s.parser.DetermineMessageType(update)
+
+	switch messageType {
+	case MessageTypeCommand:
+		return s.handleCommand(update, string(userID), string(chatID), correlationID)
+	case MessageTypeText:
+		return s.handleTextMessage(update, string(userID), string(chatID), correlationID)
+	case MessageTypeCallback:
+		return s.handleCallbackQuery(update, string(userID), string(chatID), correlationID)
+	default:
+		s.logger.Warn("Unknown message type",
+			zap.String("correlation_id", correlationID),
+			zap.String("message_type", string(messageType)))
+		return nil
+	}
+}
+
+// handleCommand processes bot commands
+func (s *chatbotService) handleCommand(update *tgbotapi.Update, userID, chatID, correlationID string) error {
+	command, err := s.parser.ExtractCommand(update.Message)
+	if err != nil {
+		s.logger.Error("Failed to extract command",
+			zap.String("correlation_id", correlationID),
+			zap.Error(err))
+		return err
+	}
+
+	s.logger.Info("Processing command",
+		zap.String("correlation_id", correlationID),
+		zap.String("command", string(command)),
+		zap.String("user_id", userID),
+		zap.String("chat_id", chatID))
+
+	// Parse command arguments
+	args := strings.Fields(update.Message.Text)
+	if len(args) > 1 {
+		args = args[1:] // Remove command itself
+	} else {
+		args = []string{}
+	}
+
+	var response string
+
+	switch command {
+	case CommandStart:
+		response, err = s.commandProcessor.ProcessStartCommand(userID, chatID)
+	case CommandHelp:
+		response, err = s.commandProcessor.ProcessHelpCommand(userID, chatID)
+	case CommandList:
+		err = s.commandProcessor.ProcessListCommand(userID, chatID)
+		return err // Response will be sent via event
+	case CommandDone:
+		response, err = s.commandProcessor.ProcessDoneCommand(userID, chatID, args)
+	case CommandDelete:
+		response, err = s.commandProcessor.ProcessDeleteCommand(userID, chatID, args)
+	default:
+		response = "Unknown command. Type /help for available commands."
+	}
+
+	if err != nil {
+		s.logger.Error("Command processing failed",
+			zap.String("correlation_id", correlationID),
+			zap.String("command", string(command)),
+			zap.Error(err))
+		response = "Sorry, there was an error processing your command."
+	}
+
+	if response != "" {
+		return s.SendMessage(common.ChatID(chatID), response)
+	}
+
+	return nil
+}
+
+// handleTextMessage processes regular text messages
+func (s *chatbotService) handleTextMessage(update *tgbotapi.Update, userID, chatID, correlationID string) error {
+	message, err := s.parser.ExtractMessage(update)
+	if err != nil {
+		s.logger.Error("Failed to extract message",
+			zap.String("correlation_id", correlationID),
+			zap.Error(err))
+		return err
+	}
+
+	s.logger.Info("Processing text message",
+		zap.String("correlation_id", correlationID),
+		zap.String("user_id", userID),
+		zap.String("chat_id", chatID),
+		zap.Int("text_length", len(message.Text)))
+
+	// Publish MessageReceived event for task parsing
+	messageEvent := events.MessageReceived{
+		Event:       events.NewEvent(),
+		UserID:      userID,
+		ChatID:      chatID,
+		MessageText: message.Text,
+	}
+
+	return s.eventBus.Publish(events.TopicMessageReceived, messageEvent)
+}
+
+// handleCallbackQuery processes inline keyboard button presses
+func (s *chatbotService) handleCallbackQuery(update *tgbotapi.Update, userID, chatID, correlationID string) error {
+	callbackData, err := s.parser.ExtractCallbackQuery(update)
+	if err != nil {
+		s.logger.Error("Failed to extract callback query",
+			zap.String("correlation_id", correlationID),
+			zap.Error(err))
+		return err
+	}
+
+	s.logger.Info("Processing callback query",
+		zap.String("correlation_id", correlationID),
+		zap.String("user_id", userID),
+		zap.String("chat_id", chatID),
+		zap.String("action", callbackData.Action))
+
+	response, err := s.commandProcessor.HandleCallbackQuery(callbackData, userID, chatID)
+	if err != nil {
+		s.logger.Error("Callback query processing failed",
+			zap.String("correlation_id", correlationID),
+			zap.Error(err))
+		response = "Sorry, there was an error processing your request."
+	}
+
+	if response != "" {
+		return s.SendMessage(common.ChatID(chatID), response)
+	}
+
+	return nil
 }
 
 // ProcessCommand processes a specific command from a user
 func (s *chatbotService) ProcessCommand(command Command, userID common.UserID, chatID common.ChatID) error {
 	s.logger.Info("Processing command",
 		zap.String("command", string(command)),
-		zap.String("userID", string(userID)),
-		zap.String("chatID", string(chatID)))
+		zap.String("user_id", string(userID)),
+		zap.String("chat_id", string(chatID)))
 
-	// TODO: Implement command-specific logic
+	var response string
+	var err error
+
 	switch command {
 	case CommandStart:
-		return s.SendMessage(common.ChatID(chatID), "Welcome! I'm your personal task nudge bot. Send me a task and I'll help you remember it!")
+		response, err = s.commandProcessor.ProcessStartCommand(string(userID), string(chatID))
 	case CommandHelp:
-		return s.SendMessage(common.ChatID(chatID), "Available commands:\n/start - Start the bot\n/help - Show this help\n/list - List your tasks\n/done - Mark task as done\n/delete - Delete a task")
+		response, err = s.commandProcessor.ProcessHelpCommand(string(userID), string(chatID))
 	case CommandList:
-		return s.SendMessage(common.ChatID(chatID), "Listing your tasks... (not implemented yet)")
+		return s.commandProcessor.ProcessListCommand(string(userID), string(chatID))
 	case CommandDone:
-		return s.SendMessage(common.ChatID(chatID), "Which task did you complete? (not implemented yet)")
+		response, err = s.commandProcessor.ProcessDoneCommand(string(userID), string(chatID), []string{})
 	case CommandDelete:
-		return s.SendMessage(common.ChatID(chatID), "Which task would you like to delete? (not implemented yet)")
+		response, err = s.commandProcessor.ProcessDeleteCommand(string(userID), string(chatID), []string{})
 	default:
-		return s.SendMessage(common.ChatID(chatID), "Unknown command. Type /help for available commands.")
+		response = "Unknown command. Type /help for available commands."
 	}
+
+	if err != nil {
+		s.logger.Error("Command processing failed", zap.Error(err))
+		response = "Sorry, there was an error processing your command."
+	}
+
+	return s.SendMessage(chatID, response)
 }
 
 // handleTaskParsed handles TaskParsed events from the LLM service
 func (s *chatbotService) handleTaskParsed(event events.TaskParsed) {
 	s.logger.Info("Handling TaskParsed event",
-		zap.String("correlationID", event.CorrelationID),
-		zap.String("userID", event.UserID),
-		zap.String("taskTitle", event.ParsedTask.Title))
+		zap.String("correlation_id", event.CorrelationID),
+		zap.String("user_id", event.UserID),
+		zap.String("task_title", event.ParsedTask.Title))
 
-	// TODO: Send confirmation message to user about the parsed task
+	// Create confirmation message with task action keyboard
+	confirmText := fmt.Sprintf("📋 <b>Task Created!</b>\n\n<b>Title:</b> %s\n<b>Priority:</b> %s",
+		event.ParsedTask.Title,
+		event.ParsedTask.Priority)
+
+	if event.ParsedTask.Description != "" {
+		confirmText += fmt.Sprintf("\n<b>Description:</b> %s", event.ParsedTask.Description)
+	}
+
+	if event.ParsedTask.DueDate != nil {
+		confirmText += fmt.Sprintf("\n<b>Due:</b> %s", event.ParsedTask.DueDate.Format("Jan 2, 2006 at 3:04 PM"))
+	}
+
+	if len(event.ParsedTask.Tags) > 0 {
+		confirmText += fmt.Sprintf("\n<b>Tags:</b> %s", strings.Join(event.ParsedTask.Tags, ", "))
+	}
+
+	// For now, we don't have a task ID, so we'll send without keyboard
+	err := s.SendMessage(common.ChatID(event.UserID), confirmText)
+	if err != nil {
+		s.logger.Error("Failed to send task confirmation",
+			zap.String("correlation_id", event.CorrelationID),
+			zap.Error(err))
+	}
 }
 
 // handleReminderDue handles ReminderDue events from the nudge service
 func (s *chatbotService) handleReminderDue(event events.ReminderDue) {
 	s.logger.Info("Handling ReminderDue event",
-		zap.String("correlationID", event.CorrelationID),
-		zap.String("taskID", event.TaskID),
-		zap.String("userID", event.UserID),
-		zap.String("chatID", event.ChatID))
+		zap.String("correlation_id", event.CorrelationID),
+		zap.String("task_id", event.TaskID),
+		zap.String("user_id", event.UserID),
+		zap.String("chat_id", event.ChatID))
 
-	// TODO: Send reminder message to user
+	// Create reminder message with task action keyboard
+	reminderText := fmt.Sprintf("⏰ <b>Task Reminder!</b>\n\nYou have a task that needs attention.\n\nTask ID: %s", event.TaskID)
+
+	// Create action keyboard for the task
+	keyboard := s.keyboardBuilder.BuildTaskActionKeyboard(event.TaskID)
+
+	// Convert to domain keyboard format
+	domainKeyboard := InlineKeyboard{
+		Buttons: make([][]InlineKeyboardButton, len(keyboard.InlineKeyboard)),
+	}
+
+	for i, row := range keyboard.InlineKeyboard {
+		domainKeyboard.Buttons[i] = make([]InlineKeyboardButton, len(row))
+		for j, button := range row {
+			domainKeyboard.Buttons[i][j] = InlineKeyboardButton{
+				Text:         button.Text,
+				CallbackData: *button.CallbackData,
+			}
+		}
+	}
+
+	err := s.SendMessageWithKeyboard(common.ChatID(event.ChatID), reminderText, domainKeyboard)
+	if err != nil {
+		s.logger.Error("Failed to send reminder",
+			zap.String("correlation_id", event.CorrelationID),
+			zap.Error(err))
+	}
 }

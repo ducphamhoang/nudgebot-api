@@ -71,11 +71,49 @@ type TaskCreated struct {
 	CreatedAt time.Time  `json:"created_at" validate:"required"`
 }
 
+// TaskListRequested represents an event when a user requests their task list
+type TaskListRequested struct {
+	Event
+	UserID string `json:"user_id" validate:"required"`
+	ChatID string `json:"chat_id" validate:"required"`
+}
+
+// TaskActionRequested represents an event when a user requests a task action
+type TaskActionRequested struct {
+	Event
+	UserID string `json:"user_id" validate:"required"`
+	ChatID string `json:"chat_id" validate:"required"`
+	TaskID string `json:"task_id" validate:"required"`
+	Action string `json:"action" validate:"required"` // done, delete, snooze
+}
+
+// UserSessionStarted represents an event when a user starts a session
+type UserSessionStarted struct {
+	Event
+	UserID      string `json:"user_id" validate:"required"`
+	ChatID      string `json:"chat_id" validate:"required"`
+	SessionType string `json:"session_type" validate:"required"`
+}
+
+// CommandExecuted represents an event when a command is executed
+type CommandExecuted struct {
+	Event
+	UserID       string `json:"user_id" validate:"required"`
+	ChatID       string `json:"chat_id" validate:"required"`
+	Command      string `json:"command" validate:"required"`
+	Success      bool   `json:"success"`
+	ErrorMessage string `json:"error_message,omitempty"`
+}
+
 // Event topics constants
 const (
-	TopicMessageReceived = "message.received"
-	TopicTaskParsed      = "task.parsed"
-	TopicReminderDue     = "reminder.due"
-	TopicTaskCompleted   = "task.completed"
-	TopicTaskCreated     = "task.created"
+	TopicMessageReceived     = "message.received"
+	TopicTaskParsed          = "task.parsed"
+	TopicReminderDue         = "reminder.due"
+	TopicTaskCompleted       = "task.completed"
+	TopicTaskCreated         = "task.created"
+	TopicTaskListRequested   = "task.list.requested"
+	TopicTaskActionRequested = "task.action.requested"
+	TopicUserSessionStarted  = "user.session.started"
+	TopicCommandExecuted     = "command.executed"
 )

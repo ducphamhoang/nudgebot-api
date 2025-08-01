@@ -51,7 +51,10 @@ func main() {
 	eventBus := events.NewEventBus(zapLogger)
 
 	// Initialize services
-	chatbotService := chatbot.NewChatbotService(eventBus, zapLogger)
+	chatbotService, err := chatbot.NewChatbotService(eventBus, zapLogger, cfg.Chatbot)
+	if err != nil {
+		logger.Fatal("Failed to initialize chatbot service", "error", err)
+	}
 	llmService := llm.NewLLMService(eventBus, zapLogger, cfg.LLM)
 	nudgeRepository := nudge.NewGormNudgeRepository(db, zapLogger)
 	nudgeService := nudge.NewNudgeService(eventBus, zapLogger, nudgeRepository)
@@ -68,7 +71,7 @@ func main() {
 	}
 
 	router := gin.New()
-	routes.SetupRoutes(router, db, logger)
+	routes.SetupRoutes(router, db, logger, chatbotService)
 
 	// Create HTTP server
 	srv := &http.Server{
