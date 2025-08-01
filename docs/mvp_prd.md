@@ -65,10 +65,11 @@ Busy individuals often rely on digital reminders, but a single notification is e
 *   **Command:** `/help`
     *   **Action:** Displays the same message as `/start`.
 
-#### 6.2. Task Creation (NLU Flow)
+#### 6.2. Task Creation (Modular NLU Flow)
 1.  **User Input:** User sends a message (e.g., "submit the Q4 report by friday at noon").
-2.  **Go Server:** Receives the webhook from Telegram.
-3.  **API Call to Gemma:** The server sends a request to the Gemma API with a structured prompt.
+2.  **Chatbot Integration Module:** Receives the webhook from Telegram and forwards the message to the LLM API Integration module.
+3.  **LLM API Integration Module:** Processes the natural language request.
+    *   Sends a request to the Gemma API with a structured prompt.
     *   **Example Prompt:**
         ```json
         {
@@ -76,7 +77,7 @@ Busy individuals often rely on digital reminders, but a single notification is e
           "response_format": "json"
         }
         ```
-4.  **Gemma Response:** Gemma returns a JSON object.
+4.  **Gemma API Response:** Returns parsed task data to the LLM API Integration module.
     *   **Expected JSON Structure:**
         ```json
         {
@@ -84,34 +85,44 @@ Busy individuals often rely on digital reminders, but a single notification is e
           "due_date": "2023-11-10T12:00:00Z"
         }
         ```
-5.  **Database:** The Go server saves the `task_description`, `due_date`, `telegram_user_id`, and `chat_id` to the PostgreSQL database with a status of `active`.
-6.  **Confirmation to User:** The bot sends a confirmation message.
+5.  **LLM API Integration Module:** Validates and forwards the parsed data to the Nudge Logic module.
+6.  **Nudge Logic Module:** Processes the task creation request.
+    *   Saves the `task_description`, `due_date`, `telegram_user_id`, and `chat_id` to the PostgreSQL database with a status of `active`.
+    *   Returns confirmation data to the Chatbot Integration module.
+7.  **Chatbot Integration Module:** Sends confirmation message to the user.
     *   **Message Copy:** "✅ Got it! I'll remind you to: **Submit the Q4 report** on Friday, Nov 10 at 12:00 PM."
 
 #### 6.3. Reminder & Snooze Flow
-1.  **Trigger:** The backend scheduler finds a task whose `due_date` is now.
-2.  **Action:** The bot sends a message to the user's chat.
+1.  **Trigger:** The Nudge Logic module's background scheduler finds a task whose `due_date` is now.
+2.  **Nudge Logic Module:** Requests the Chatbot Integration module to send a reminder.
+3.  **Chatbot Integration Module:** Sends a message to the user's chat.
     *   **Message Copy:** "🔔 Time for: **Submit the Q4 report**"
     *   **Inline Keyboard Buttons:**
         *   `✅ Done`
         *   `⏰ Snooze`
-3.  **User Clicks `✅ Done`:** The task status is updated to `completed` in the database. The bot edits the original message to "👍 Great work! Task completed."
-4.  **User Clicks `⏰ Snooze`:** The buttons are replaced with new snooze options.
+4.  **User Clicks `✅ Done`:** 
+    *   Chatbot Integration module forwards the callback to Nudge Logic module.
+    *   Nudge Logic module updates the task status to `completed` in the database.
+    *   Chatbot Integration module edits the original message to "👍 Great work! Task completed."
+5.  **User Clicks `⏰ Snooze`:** 
+    *   Chatbot Integration module replaces the buttons with new snooze options.
     *   **Snooze Buttons:** `15 Minutes`, `1 Hour`, `Tomorrow Morning`
-    *   When a snooze option is clicked, the `due_date` for the task is updated in the database, and the bot replies: "Okay, I'll remind you again in [snooze duration]."
+    *   When a snooze option is clicked, the Chatbot Integration module forwards the request to Nudge Logic module.
+    *   Nudge Logic module updates the `due_date` for the task in the database.
+    *   Chatbot Integration module replies: "Okay, I'll remind you again in [snooze duration]."
     *   `Tomorrow Morning` will be defined as 9:00 AM in the bot's configured timezone (initially UTC for MVP).
 
 #### 6.4. The Nudge System
-*   **Trigger:** The backend scheduler identifies an `active` task whose `due_date` is more than **2 hours** in the past and has not been snoozed or completed.
-*   **Action:** The bot sends a new, distinct message. This is a one-time nudge per task.
+*   **Trigger:** The Nudge Logic module's background scheduler identifies an `active` task whose `due_date` is more than **2 hours** in the past and has not been snoozed or completed.
+*   **Action:** Nudge Logic module requests the Chatbot Integration module to send a new, distinct message. This is a one-time nudge per task.
 *   **Nudge Message Copy:** "Hey, just checking in. Were you able to get to this task? **Submit the Q4 report**"
 *   **Inline Keyboard Buttons:**
-    *   `✅ Yes, it's Done!` (marks task as `completed`)
-    *   `⏰ Remind Me Later` (triggers the snooze options again)
+    *   `✅ Yes, it's Done!` (Chatbot Integration forwards to Nudge Logic to mark task as `completed`)
+    *   `⏰ Remind Me Later` (Chatbot Integration forwards to Nudge Logic which triggers the snooze options again)
 
 #### 6.5. Task Management Commands
 *   **Command:** `/list`
-    *   **Action:** Bot retrieves all `active` tasks for the user, sorted by `due_date`.
+    *   **Action:** Chatbot Integration module forwards request to Nudge Logic module, which retrieves all `active` tasks for the user, sorted by `due_date`.
     *   **Output Format:**
         > "Here are your upcoming tasks:
         >
@@ -120,26 +131,67 @@ Busy individuals often rely on digital reminders, but a single notification is e
         >
         > To manage a task, use `/done [number]` or `/delete [number]`."
 *   **Command:** `/done [number]` (e.g., `/done 1`)
-    *   **Action:** Marks the corresponding task as `completed`.
+    *   **Action:** Chatbot Integration module forwards to Nudge Logic module, which marks the corresponding task as `completed`.
     *   **Reply:** "✅ Task 'Call Sarah' marked as done!"
 *   **Command:** `/delete [number]`
-    *   **Action:** Deletes the task from the database.
+    *   **Action:** Chatbot Integration module forwards to Nudge Logic module, which deletes the task from the database.
     *   **Reply:** "🗑️ Task 'Call Sarah' has been deleted."
 
 #### 6.6. Error Handling
-*   **Trigger:** The Gemma API returns an error or a JSON that doesn't contain a `task_description` or `due_date`.
-*   **Action:** The bot sends a helpful error message.
+*   **Trigger:** The LLM API Integration module receives an error from the Gemma API or a JSON that doesn't contain a `task_description` or `due_date`.
+*   **Action:** LLM API Integration module returns an error response to the Chatbot Integration module, which sends a helpful error message to the user.
 *   **Message Copy:** "Sorry, I had trouble understanding that. Could you try phrasing it more simply, like `remind me to [task] on [date] at [time]`?"
 
 ### 7. Technical Architecture & Stack
 
+#### 7.1. Modular Architecture Design
+
+The NudgeBot system is built using a modular architecture consisting of three main modules that work together to provide a seamless task management experience:
+
+##### **Chatbot Integration Module**
+*   **Responsibility:** Handles all Telegram Bot API interactions, message routing, and user interface elements
+*   **Key Functions:**
+    *   Process incoming Telegram webhooks
+    *   Send messages and inline keyboards to users
+    *   Handle button callbacks and user interactions
+    *   Route messages between other modules
+*   **Interface:** Exposes REST endpoints for receiving webhooks and internal APIs for sending messages
+
+##### **LLM API Integration Module**
+*   **Responsibility:** Manages all interactions with external Language Learning Models for natural language processing
+*   **Key Functions:**
+    *   Parse natural language task descriptions
+    *   Extract task details (description, due date) from user messages
+    *   Handle API communication with Google Gemma
+    *   Format and validate LLM responses
+*   **Interface:** Provides task parsing endpoints that accept raw text and return structured task data
+
+##### **Nudge Logic Module**
+*   **Responsibility:** Core business logic for task management, scheduling, and nudge functionality
+*   **Key Functions:**
+    *   Task CRUD operations and state management
+    *   Scheduling system for reminders and nudges
+    *   Task completion and snooze logic
+    *   Database operations and data persistence
+*   **Interface:** Exposes task management APIs for creating, updating, and querying tasks
+
+##### **Module Communication Flow**
+```
+User Message → Chatbot Integration → LLM API Integration → Nudge Logic → Database
+                     ↓                        ↓                    ↓
+User Response ← Chatbot Integration ← Parsed Task Data ← Task Created
+```
+
+#### 7.2. Technical Stack
+
 *   **Platform:** Telegram Bot API
-*   **Backend Language:** **Go (Golang)** - Chosen for performance and concurrency, essential for the scheduler.
-*   **Web Framework:** **Gin** - A lightweight, high-performance web framework for Go.
-*   **NLU Service:** **Google Gemma API** - All natural language parsing will be handled via API calls.
-*   **Database:** **PostgreSQL** - To store user and task data.
-*   **Scheduler:** A custom scheduler built with native **Go goroutines and channels**. A main goroutine will "tick" every minute, querying the DB and spawning new goroutines for due tasks.
-*   **Deployment:** The application will be packaged in a **Docker container** and hosted on a cloud service like **Google Cloud Run**.
+*   **Backend Language:** **Go (Golang)** - Chosen for performance and concurrency, essential for the scheduler and modular architecture.
+*   **Web Framework:** **Gin** - A lightweight, high-performance web framework for Go, used across all modules.
+*   **NLU Service:** **Google Gemma API** - All natural language parsing handled by the LLM API Integration module.
+*   **Database:** **PostgreSQL** - To store user and task data, accessed through the Nudge Logic module.
+*   **Scheduler:** A custom scheduler built with native **Go goroutines and channels** within the Nudge Logic module. A main goroutine will "tick" every minute, querying the DB and coordinating with the Chatbot Integration module for notifications.
+*   **Inter-Module Communication:** HTTP/REST APIs for communication between modules, enabling loose coupling and independent scaling.
+*   **Deployment:** Each module will be packaged in separate **Docker containers** and hosted on a cloud service like **Google Cloud Run** for independent scaling and deployment.
 
 ### 8. Scope: Out of MVP
 
