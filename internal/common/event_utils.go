@@ -314,7 +314,7 @@ func ExtractUserContext(event interface{}) (userID, chatID string, err error) {
 	case events.MessageReceived:
 		return e.UserID, e.ChatID, nil
 	case events.TaskParsed:
-		return e.UserID, "", nil
+		return e.UserID, e.ChatID, nil
 	case events.TaskListRequested:
 		return e.UserID, e.ChatID, nil
 	case events.TaskActionRequested:

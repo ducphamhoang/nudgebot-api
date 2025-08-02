@@ -31,6 +31,7 @@ func createIndexes(db *gorm.DB) error {
 	// Task table indexes
 	taskIndexes := []string{
 		"CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id)",
+		"CREATE INDEX IF NOT EXISTS idx_tasks_chat_id ON tasks(chat_id)",
 		"CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)",
 		"CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date)",
 		"CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority)",
@@ -39,6 +40,7 @@ func createIndexes(db *gorm.DB) error {
 		"CREATE INDEX IF NOT EXISTS idx_tasks_user_status ON tasks(user_id, status)",
 		"CREATE INDEX IF NOT EXISTS idx_tasks_user_priority ON tasks(user_id, priority)",
 		"CREATE INDEX IF NOT EXISTS idx_tasks_status_due_date ON tasks(status, due_date)",
+		"CREATE INDEX IF NOT EXISTS idx_tasks_user_chat ON tasks(user_id, chat_id)",
 	}
 
 	for _, index := range taskIndexes {
@@ -51,11 +53,13 @@ func createIndexes(db *gorm.DB) error {
 	reminderIndexes := []string{
 		"CREATE INDEX IF NOT EXISTS idx_reminders_task_id ON reminders(task_id)",
 		"CREATE INDEX IF NOT EXISTS idx_reminders_user_id ON reminders(user_id)",
+		"CREATE INDEX IF NOT EXISTS idx_reminders_chat_id ON reminders(chat_id)",
 		"CREATE INDEX IF NOT EXISTS idx_reminders_scheduled_at ON reminders(scheduled_at)",
 		"CREATE INDEX IF NOT EXISTS idx_reminders_sent_at ON reminders(sent_at)",
 		"CREATE INDEX IF NOT EXISTS idx_reminders_type ON reminders(reminder_type)",
 		"CREATE INDEX IF NOT EXISTS idx_reminders_scheduled_sent ON reminders(scheduled_at, sent_at)",
 		"CREATE INDEX IF NOT EXISTS idx_reminders_task_scheduled ON reminders(task_id, scheduled_at)",
+		"CREATE INDEX IF NOT EXISTS idx_reminders_user_chat ON reminders(user_id, chat_id)",
 	}
 
 	for _, index := range reminderIndexes {

@@ -163,6 +163,7 @@ func (s *llmService) handleMessageReceived(event events.MessageReceived) {
 	taskParsedEvent := events.TaskParsed{
 		Event:      events.NewEvent(),
 		UserID:     event.UserID,
+		ChatID:     event.ChatID, // Include ChatID from the original message
 		ParsedTask: eventsParsedTask,
 	}
 

@@ -10,6 +10,7 @@ import (
 type Task struct {
 	ID          common.TaskID     `json:"id" gorm:"primaryKey;type:varchar(36)" validate:"required"`
 	UserID      common.UserID     `json:"user_id" gorm:"type:varchar(36);not null;index" validate:"required"`
+	ChatID      common.ChatID     `json:"chat_id" gorm:"type:varchar(36);index"`
 	Title       string            `json:"title" gorm:"type:varchar(255);not null" validate:"required"`
 	Description string            `json:"description" gorm:"type:text"`
 	DueDate     *time.Time        `json:"due_date" gorm:"type:timestamp"`
@@ -25,6 +26,7 @@ type Reminder struct {
 	ID           common.ID     `json:"id" gorm:"primaryKey;type:varchar(36)" validate:"required"`
 	TaskID       common.TaskID `json:"task_id" gorm:"type:varchar(36);not null;index" validate:"required"`
 	UserID       common.UserID `json:"user_id" gorm:"type:varchar(36);not null;index" validate:"required"`
+	ChatID       common.ChatID `json:"chat_id" gorm:"type:varchar(36);not null;index" validate:"required"`
 	ScheduledAt  time.Time     `json:"scheduled_at" gorm:"type:timestamp;not null" validate:"required"`
 	SentAt       *time.Time    `json:"sent_at" gorm:"type:timestamp"`
 	ReminderType ReminderType  `json:"reminder_type" gorm:"type:varchar(20);not null" validate:"required"`

@@ -41,6 +41,7 @@ type ParsedTask struct {
 type TaskParsed struct {
 	Event
 	UserID     string     `json:"user_id" validate:"required"`
+	ChatID     string     `json:"chat_id" validate:"required"`
 	ParsedTask ParsedTask `json:"parsed_task" validate:"required"`
 }
 

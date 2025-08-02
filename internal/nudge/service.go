@@ -263,17 +263,39 @@ func (s *nudgeService) ScheduleReminder(taskID common.TaskID, scheduledAt time.T
 		zap.String("reminderType", string(reminderType)))
 
 	if s.repository != nil {
-		// Get the task to get the user ID
+		// Get the task to get the user ID and chat ID
 		task, err := s.repository.GetTaskByID(taskID)
 		if err != nil {
 			s.logger.Error("Failed to get task for reminder scheduling", zap.Error(err))
 			return err
 		}
 
+		// Determine ChatID - use task's ChatID if available, otherwise use UserID as fallback
+		//
+		// ChatID Resolution Strategy:
+		// 1. Primary: Use ChatID stored in the task (for tasks created from chat interactions)
+		// 2. Fallback: Use UserID as ChatID (for backwards compatibility with existing tasks)
+		//
+		// This approach ensures:
+		// - New tasks created from chat interactions have proper ChatID tracking
+		// - Existing tasks without ChatID continue to work (assuming UserID == ChatID for private chats)
+		// - Clear logging when fallback is used for debugging and migration purposes
+		chatID := task.ChatID
+		if chatID == "" {
+			// Fallback: assume ChatID equals UserID for backwards compatibility
+			// This handles cases where tasks were created before ChatID tracking
+			chatID = common.ChatID(task.UserID)
+			s.logger.Warn("No ChatID found in task, using UserID as fallback",
+				zap.String("taskID", string(taskID)),
+				zap.String("userID", string(task.UserID)),
+				zap.String("fallback_chatID", string(chatID)))
+		}
+
 		reminder := &Reminder{
 			ID:           common.ID(common.NewID()),
 			TaskID:       taskID,
 			UserID:       task.UserID,
+			ChatID:       chatID, // Use the resolved ChatID
 			ScheduledAt:  scheduledAt,
 			ReminderType: reminderType,
 		}
@@ -340,12 +362,14 @@ func (s *nudgeService) handleTaskParsed(event events.TaskParsed) {
 	s.logger.Info("Handling TaskParsed event",
 		zap.String("correlationID", event.CorrelationID),
 		zap.String("userID", event.UserID),
+		zap.String("chatID", event.ChatID),
 		zap.String("taskTitle", event.ParsedTask.Title))
 
 	// Create a task from the parsed event
 	task := &Task{
 		ID:          common.TaskID(common.NewID()),
 		UserID:      common.UserID(event.UserID),
+		ChatID:      common.ChatID(event.ChatID), // Store ChatID from the event
 		Title:       event.ParsedTask.Title,
 		Description: event.ParsedTask.Description,
 		DueDate:     event.ParsedTask.DueDate,

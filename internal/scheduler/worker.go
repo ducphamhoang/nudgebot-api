@@ -88,12 +88,24 @@ func (w *reminderWorker) processReminders() error {
 
 // processReminder handles a single reminder
 func (w *reminderWorker) processReminder(reminder *nudge.Reminder) error {
-	// Publish ReminderDue event
+	// Publish ReminderDue event with proper ChatID from reminder data
+	//
+	// ChatID Resolution:
+	// The ChatID is now properly stored in the reminder data structure, eliminating
+	// the previous assumption that ChatID equals UserID. This ensures:
+	// 1. Accurate delivery of reminders to the correct chat/conversation
+	// 2. Support for group chats where ChatID != UserID
+	// 3. Proper tracking of user-chat relationships
+	//
+	// The ChatID is populated when:
+	// - Tasks are created from chat interactions (via TaskParsed events)
+	// - Reminders are scheduled with the task's ChatID information
+	// - Nudge reminders inherit ChatID from original reminders
 	reminderDueEvent := events.ReminderDue{
 		Event:  events.NewEvent(),
 		TaskID: string(reminder.TaskID),
 		UserID: string(reminder.UserID),
-		ChatID: string(reminder.UserID), // Assuming ChatID is same as UserID for now
+		ChatID: string(reminder.ChatID), // Use the actual ChatID from reminder data
 	}
 
 	if err := w.scheduler.eventBus.Publish(events.TopicReminderDue, reminderDueEvent); err != nil {
@@ -197,11 +209,13 @@ func (w *reminderWorker) createNudgeReminder(originalReminder *nudge.Reminder) e
 	reminderManager := nudge.NewReminderManager()
 	nudgeTime := reminderManager.GetNextNudgeTime(originalReminder.ScheduledAt, nudgeSettings)
 
-	// Create new nudge reminder
+	// Create new nudge reminder with preserved ChatID
+	// This ensures nudge reminders maintain the same chat context as the original reminder
 	nudgeReminder := &nudge.Reminder{
 		ID:           common.NewID(),
 		TaskID:       originalReminder.TaskID,
 		UserID:       originalReminder.UserID,
+		ChatID:       originalReminder.ChatID, // Preserve ChatID from original reminder
 		ScheduledAt:  nudgeTime,
 		SentAt:       nil,
 		ReminderType: nudge.ReminderTypeNudge,
