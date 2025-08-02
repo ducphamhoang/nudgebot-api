@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -142,12 +143,13 @@ func (s *scheduler) worker(workerID int) {
 	defer s.wg.Done()
 	defer func() {
 		if r := recover(); r != nil {
-			s.logger.Error("Worker panic recovered, restarting worker",
+			s.logger.Error("Worker panic recovered - worker will be terminated",
 				zap.Int("worker_id", workerID),
 				zap.Any("panic", r))
-			// Restart the worker
-			s.wg.Add(1)
-			go s.worker(workerID)
+			panicErr := NewWorkerError(workerID, "panic_recovery", fmt.Errorf("worker panic: %v", r))
+			s.metrics.RecordProcessingError(panicErr)
+			// Do not restart automatically - let the scheduler handle worker management
+			// This prevents WaitGroup corruption and maintains clean shutdown semantics
 		}
 	}()
 

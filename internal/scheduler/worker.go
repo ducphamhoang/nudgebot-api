@@ -69,13 +69,13 @@ func (w *reminderWorker) processReminders() error {
 	}
 
 	processingDuration := time.Since(startTime)
-	
+
 	// Record metrics
 	w.scheduler.metrics.RecordReminderProcessed(processingDuration)
 	for i := 0; i < nudgesCreated; i++ {
 		w.scheduler.metrics.RecordNudgeCreated()
 	}
-	
+
 	w.logger.Info("Reminder processing cycle completed",
 		zap.Int("total_reminders", len(reminders)),
 		zap.Int("processed_count", processedCount),

@@ -63,7 +63,12 @@ func main() {
 	// Initialize scheduler
 	var reminderScheduler scheduler.Scheduler
 	if cfg.Scheduler.Enabled {
-		reminderScheduler = scheduler.NewScheduler(cfg.Scheduler, nudgeRepository, eventBus, zapLogger)
+		var err error
+		reminderScheduler, err = scheduler.NewScheduler(cfg.Scheduler, nudgeRepository, eventBus, zapLogger)
+		if err != nil {
+			logger.Error("Failed to create scheduler", "error", err)
+			log.Fatal("Failed to create scheduler: ", err)
+		}
 
 		// Start scheduler in background
 		go func() {
