@@ -17,6 +17,7 @@ import (
 	"nudgebot-api/internal/events"
 	"nudgebot-api/internal/llm"
 	"nudgebot-api/internal/nudge"
+	"nudgebot-api/internal/scheduler"
 	"nudgebot-api/pkg/logger"
 
 	"github.com/gin-gonic/gin"
@@ -58,6 +59,26 @@ func main() {
 	llmService := llm.NewLLMService(eventBus, zapLogger, cfg.LLM)
 	nudgeRepository := nudge.NewGormNudgeRepository(db, zapLogger)
 	nudgeService := nudge.NewNudgeService(eventBus, zapLogger, nudgeRepository)
+
+	// Initialize scheduler
+	var reminderScheduler scheduler.Scheduler
+	if cfg.Scheduler.Enabled {
+		reminderScheduler = scheduler.NewScheduler(cfg.Scheduler, nudgeRepository, eventBus, zapLogger)
+
+		// Start scheduler in background
+		go func() {
+			if err := reminderScheduler.Start(context.Background()); err != nil {
+				logger.Error("Scheduler failed to start", "error", err)
+			}
+		}()
+
+		logger.Info("Reminder scheduler started",
+			"poll_interval", cfg.Scheduler.PollInterval,
+			"nudge_delay", cfg.Scheduler.NudgeDelay,
+			"worker_count", cfg.Scheduler.WorkerCount)
+	} else {
+		logger.Info("Reminder scheduler disabled")
+	}
 
 	// Log that services are initialized (to avoid unused variable warnings)
 	logger.Info("Services initialized",
@@ -112,6 +133,16 @@ func main() {
 	<-quit
 
 	logger.Info("Shutting down server...")
+
+	// Stop scheduler first
+	if cfg.Scheduler.Enabled && reminderScheduler != nil {
+		logger.Info("Stopping reminder scheduler...")
+		if err := reminderScheduler.Stop(); err != nil {
+			logger.Error("Failed to stop scheduler gracefully", "error", err)
+		} else {
+			logger.Info("Reminder scheduler stopped successfully")
+		}
+	}
 
 	// Stop accepting new events
 	logger.Info("Stopping event processing...")

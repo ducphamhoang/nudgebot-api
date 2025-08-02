@@ -29,7 +29,7 @@ type TaskRepository interface {
 type ReminderRepository interface {
 	Create(reminder *Reminder) error
 	GetDueReminders(before time.Time) ([]*Reminder, error)
-	MarkSent(reminderID common.ID) error
+	MarkReminderSent(reminderID common.ID) error
 	GetByTaskID(taskID common.TaskID) ([]*Reminder, error)
 	Delete(reminderID common.ID) error
 }

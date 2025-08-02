@@ -26,3 +26,20 @@ llm:
   timeout: 30
   max_retries: 3
   model: "gemma-2-27b-it"
+
+events:
+  buffer_size: 1000
+  worker_count: 4
+  shutdown_timeout: 30
+
+nudge:
+  default_reminder_interval: 3600  # 1 hour in seconds
+  max_nudges: 3
+  cleanup_interval: 86400  # 24 hours in seconds
+
+scheduler:
+  enabled: true
+  poll_interval: 30  # seconds
+  nudge_delay: 7200   # 2 hours in seconds
+  worker_count: 2
+  shutdown_timeout: 30

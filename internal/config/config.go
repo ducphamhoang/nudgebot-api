@@ -8,12 +8,13 @@ import (
 )
 
 type Config struct {
-	Server   ServerConfig   `mapstructure:"server"`
-	Database DatabaseConfig `mapstructure:"database"`
-	Chatbot  ChatbotConfig  `mapstructure:"chatbot"`
-	LLM      LLMConfig      `mapstructure:"llm"`
-	Events   EventsConfig   `mapstructure:"events"`
-	Nudge    NudgeConfig    `mapstructure:"nudge"`
+	Server    ServerConfig    `mapstructure:"server"`
+	Database  DatabaseConfig  `mapstructure:"database"`
+	Chatbot   ChatbotConfig   `mapstructure:"chatbot"`
+	LLM       LLMConfig       `mapstructure:"llm"`
+	Events    EventsConfig    `mapstructure:"events"`
+	Nudge     NudgeConfig     `mapstructure:"nudge"`
+	Scheduler SchedulerConfig `mapstructure:"scheduler"`
 }
 
 type ServerConfig struct {
@@ -59,6 +60,14 @@ type NudgeConfig struct {
 	DefaultReminderInterval int `mapstructure:"default_reminder_interval"`
 	MaxNudges               int `mapstructure:"max_nudges"`
 	CleanupInterval         int `mapstructure:"cleanup_interval"`
+}
+
+type SchedulerConfig struct {
+	PollInterval    int  `mapstructure:"poll_interval"`
+	NudgeDelay      int  `mapstructure:"nudge_delay"`
+	WorkerCount     int  `mapstructure:"worker_count"`
+	ShutdownTimeout int  `mapstructure:"shutdown_timeout"`
+	Enabled         bool `mapstructure:"enabled"`
 }
 
 func Load() (*Config, error) {
@@ -122,4 +131,10 @@ func setDefaults() {
 	viper.SetDefault("nudge.default_reminder_interval", 3600) // 1 hour in seconds
 	viper.SetDefault("nudge.max_nudges", 3)
 	viper.SetDefault("nudge.cleanup_interval", 86400) // 24 hours in seconds
+
+	viper.SetDefault("scheduler.poll_interval", 30) // 30 seconds
+	viper.SetDefault("scheduler.nudge_delay", 7200) // 2 hours
+	viper.SetDefault("scheduler.worker_count", 2)
+	viper.SetDefault("scheduler.shutdown_timeout", 30)
+	viper.SetDefault("scheduler.enabled", true)
 }
