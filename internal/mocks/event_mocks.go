@@ -45,6 +45,25 @@ func (m *MockEventBus) Subscribe(topic string, handler interface{}) error {
 	return nil
 }
 
+// Unsubscribe implements the EventBus interface
+func (m *MockEventBus) Unsubscribe(topic string, handler interface{}) error {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	if handlers, exists := m.subscriptions[topic]; exists {
+		for i, h := range handlers {
+			// Simple comparison - in a real implementation this would need better handler matching
+			if h == handler {
+				// Remove handler from slice
+				m.subscriptions[topic] = append(handlers[:i], handlers[i+1:]...)
+				break
+			}
+		}
+	}
+
+	return nil
+}
+
 // Publish implements the EventBus interface
 func (m *MockEventBus) Publish(topic string, event interface{}) error {
 	m.mutex.Lock()

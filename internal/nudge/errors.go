@@ -8,15 +8,17 @@ import (
 
 // Error codes for nudge module
 const (
-	ErrCodeTaskNotFound      = "TASK_NOT_FOUND"
-	ErrCodeInvalidStatus     = "INVALID_STATUS"
-	ErrCodeInvalidTransition = "INVALID_TRANSITION"
-	ErrCodeValidationFailed  = "VALIDATION_FAILED"
-	ErrCodeDuplicateTask     = "DUPLICATE_TASK"
-	ErrCodeReminderFailed    = "REMINDER_FAILED"
-	ErrCodeBusinessRule      = "BUSINESS_RULE_VIOLATION"
-	ErrCodeRepository        = "REPOSITORY_ERROR"
-	ErrCodeInvalidAction     = "INVALID_ACTION"
+	ErrCodeTaskNotFound         = "TASK_NOT_FOUND"
+	ErrCodeInvalidStatus        = "INVALID_STATUS"
+	ErrCodeInvalidTransition    = "INVALID_TRANSITION"
+	ErrCodeValidationFailed     = "VALIDATION_FAILED"
+	ErrCodeDuplicateTask        = "DUPLICATE_TASK"
+	ErrCodeReminderFailed       = "REMINDER_FAILED"
+	ErrCodeBusinessRule         = "BUSINESS_RULE_VIOLATION"
+	ErrCodeRepository           = "REPOSITORY_ERROR"
+	ErrCodeInvalidAction        = "INVALID_ACTION"
+	ErrCodeSubscriptionFailed   = "SUBSCRIPTION_FAILED"
+	ErrCodeSubscriptionNotReady = "SUBSCRIPTION_NOT_READY"
 )
 
 // NudgeError interface for nudge-specific errors
@@ -291,4 +293,66 @@ func IsRepositoryError(err error) bool {
 		return nudgeErr.Code() == ErrCodeRepository
 	}
 	return false
+}
+
+// SubscriptionError represents errors during event subscription setup
+type SubscriptionError struct {
+	Topic      string
+	ErrMessage string
+	Retryable  bool
+}
+
+func (e SubscriptionError) Error() string {
+	return fmt.Sprintf("subscription failed for topic '%s': %s", e.Topic, e.ErrMessage)
+}
+
+func (e SubscriptionError) Code() string {
+	return ErrCodeSubscriptionFailed
+}
+
+func (e SubscriptionError) Message() string {
+	return e.ErrMessage
+}
+
+func (e SubscriptionError) Temporary() bool {
+	return e.Retryable
+}
+
+// NewSubscriptionError creates a new subscription error
+func NewSubscriptionError(topic, message string, retryable bool) SubscriptionError {
+	return SubscriptionError{
+		Topic:      topic,
+		ErrMessage: message,
+		Retryable:  retryable,
+	}
+}
+
+// SubscriptionHealthError represents errors during subscription health checks
+type SubscriptionHealthError struct {
+	MissingTopics []string
+	ErrMessage    string
+}
+
+func (e SubscriptionHealthError) Error() string {
+	return fmt.Sprintf("subscription health check failed: %s (missing topics: %v)", e.ErrMessage, e.MissingTopics)
+}
+
+func (e SubscriptionHealthError) Code() string {
+	return ErrCodeSubscriptionNotReady
+}
+
+func (e SubscriptionHealthError) Message() string {
+	return e.ErrMessage
+}
+
+func (e SubscriptionHealthError) Temporary() bool {
+	return true
+}
+
+// NewSubscriptionHealthError creates a new subscription health error
+func NewSubscriptionHealthError(missingTopics []string, message string) SubscriptionHealthError {
+	return SubscriptionHealthError{
+		MissingTopics: missingTopics,
+		ErrMessage:    message,
+	}
 }

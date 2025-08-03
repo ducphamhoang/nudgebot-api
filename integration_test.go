@@ -356,7 +356,10 @@ func TestEventDrivenServiceShutdown(t *testing.T) {
 func setupMockNudgeService(t *testing.T, eventBus events.EventBus, logger *zap.Logger) nudge.NudgeService {
 	// Create mock nudge service for testing
 	mockRepo := nudge.NewMockTaskRepository()
-	service := nudge.NewNudgeService(eventBus, logger, mockRepo)
+	service, err := nudge.NewNudgeService(eventBus, logger, mockRepo)
+	if err != nil {
+		t.Fatalf("Failed to create nudge service: %v", err)
+	}
 	return service
 }
 

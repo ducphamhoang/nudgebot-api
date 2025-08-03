@@ -65,7 +65,10 @@ func testEventFlowIntegration() error {
 	} else {
 		nudgeRepository = nil // This will use mock behavior in service
 	}
-	nudgeService = nudge.NewNudgeService(eventBus, zapLogger, nudgeRepository)
+	nudgeService, err = nudge.NewNudgeService(eventBus, zapLogger, nudgeRepository)
+	if err != nil {
+		return fmt.Errorf("failed to create nudge service: %w", err)
+	}
 
 	// Log services for verification (prevent unused variable errors)
 	fmt.Printf("✅ Services initialized - LLM: %v, Nudge: %v\n", llmService != nil, nudgeService != nil)

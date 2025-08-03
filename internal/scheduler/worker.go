@@ -199,8 +199,8 @@ func (w *reminderWorker) createNudgeReminder(originalReminder *nudge.Reminder) e
 		// Use default settings if not found
 		nudgeSettings = &nudge.NudgeSettings{
 			UserID:        originalReminder.UserID,
-			NudgeInterval: time.Hour, // 1 hour default
-			MaxNudges:     3,         // Default max nudges
+			NudgeInterval: time.Duration(w.scheduler.config.NudgeDelay) * time.Second,
+			MaxNudges:     3, // Default max nudges
 			Enabled:       true,
 		}
 	}

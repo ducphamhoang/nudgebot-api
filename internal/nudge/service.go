@@ -1,6 +1,8 @@
 package nudge
 
 import (
+	"fmt"
+	"sync"
 	"time"
 
 	"nudgebot-api/internal/common"
@@ -24,6 +26,9 @@ type NudgeService interface {
 	SnoozeTask(taskID common.TaskID, snoozeUntil time.Time) error
 	GetOverdueTasks(userID common.UserID) ([]*Task, error)
 	BulkUpdateStatus(taskIDs []common.TaskID, status common.TaskStatus) error
+
+	// Health check methods
+	CheckSubscriptionHealth() error
 }
 
 // nudgeService implements the NudgeService interface
@@ -34,10 +39,14 @@ type nudgeService struct {
 	validator       *TaskValidator
 	reminderManager *ReminderManager
 	statusManager   *TaskStatusManager
+
+	// Subscription tracking
+	subscriptions map[string]bool
+	mu            sync.RWMutex
 }
 
 // NewNudgeService creates a new instance of NudgeService
-func NewNudgeService(eventBus events.EventBus, logger *zap.Logger, repository NudgeRepository) NudgeService {
+func NewNudgeService(eventBus events.EventBus, logger *zap.Logger, repository NudgeRepository) (NudgeService, error) {
 	if repository == nil {
 		logger.Warn("NudgeService initialized with nil repository - using mock behavior")
 	}
@@ -49,33 +58,136 @@ func NewNudgeService(eventBus events.EventBus, logger *zap.Logger, repository Nu
 		validator:       NewTaskValidator(),
 		reminderManager: NewReminderManager(),
 		statusManager:   NewTaskStatusManager(),
+		subscriptions:   make(map[string]bool),
+		mu:              sync.RWMutex{},
 	}
 
-	// Subscribe to relevant events
-	service.setupEventSubscriptions()
+	// Subscribe to relevant events with retry logic
+	if err := service.setupEventSubscriptions(); err != nil {
+		logger.Error("Failed to setup event subscriptions", zap.Error(err))
+		return nil, err
+	}
 
-	return service
+	return service, nil
 }
 
-// setupEventSubscriptions sets up event subscriptions for the nudge service
-func (s *nudgeService) setupEventSubscriptions() {
-	// Subscribe to TaskParsed events from the LLM service
-	err := s.eventBus.Subscribe(events.TopicTaskParsed, s.handleTaskParsed)
-	if err != nil {
-		s.logger.Error("Failed to subscribe to TaskParsed events", zap.Error(err))
+// setupEventSubscriptions sets up event subscriptions for the nudge service with retry logic
+func (s *nudgeService) setupEventSubscriptions() error {
+	requiredSubscriptions := map[string]interface{}{
+		events.TopicTaskParsed:          s.handleTaskParsed,
+		events.TopicTaskListRequested:   s.handleTaskListRequested,
+		events.TopicTaskActionRequested: s.handleTaskActionRequested,
 	}
 
-	// Subscribe to TaskListRequested events from the chatbot
-	err = s.eventBus.Subscribe(events.TopicTaskListRequested, s.handleTaskListRequested)
-	if err != nil {
-		s.logger.Error("Failed to subscribe to TaskListRequested events", zap.Error(err))
+	maxRetries := 3
+	baseDelay := 100 * time.Millisecond
+	maxDelay := 5 * time.Second
+
+	var failedSubscriptions []string
+
+	for topic, handler := range requiredSubscriptions {
+		if err := s.subscribeWithRetry(topic, handler, maxRetries, baseDelay, maxDelay); err != nil {
+			s.logger.Error("Failed to subscribe to topic after retries",
+				zap.String("topic", topic),
+				zap.Error(err),
+				zap.Int("max_retries", maxRetries))
+			failedSubscriptions = append(failedSubscriptions, topic)
+		} else {
+			s.markSubscriptionActive(topic)
+			s.logger.Info("Successfully subscribed to topic", zap.String("topic", topic))
+		}
 	}
 
-	// Subscribe to TaskActionRequested events from the chatbot
-	err = s.eventBus.Subscribe(events.TopicTaskActionRequested, s.handleTaskActionRequested)
-	if err != nil {
-		s.logger.Error("Failed to subscribe to TaskActionRequested events", zap.Error(err))
+	if len(failedSubscriptions) > 0 {
+		return NewSubscriptionError(
+			fmt.Sprintf("%d topics", len(failedSubscriptions)),
+			fmt.Sprintf("failed to subscribe to critical topics: %v", failedSubscriptions),
+			true,
+		)
 	}
+
+	s.logger.Info("All event subscriptions established successfully")
+	return nil
+}
+
+// subscribeWithRetry attempts to subscribe to a topic with exponential backoff retry logic
+func (s *nudgeService) subscribeWithRetry(topic string, handler interface{}, maxRetries int, baseDelay, maxDelay time.Duration) error {
+	var lastErr error
+
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			// Calculate delay with exponential backoff
+			multiplier := 1 << uint(attempt-1) // 2^(attempt-1)
+			delay := time.Duration(int64(baseDelay) * int64(multiplier))
+			if delay > maxDelay {
+				delay = maxDelay
+			}
+
+			s.logger.Warn("Retrying subscription",
+				zap.String("topic", topic),
+				zap.Int("attempt", attempt),
+				zap.Duration("delay", delay))
+
+			time.Sleep(delay)
+		}
+
+		err := s.eventBus.Subscribe(topic, handler)
+		if err == nil {
+			if attempt > 0 {
+				s.logger.Info("Subscription succeeded after retry",
+					zap.String("topic", topic),
+					zap.Int("attempt", attempt))
+			}
+			return nil
+		}
+
+		lastErr = err
+		s.logger.Warn("Subscription attempt failed",
+			zap.String("topic", topic),
+			zap.Int("attempt", attempt+1),
+			zap.Int("max_retries", maxRetries+1),
+			zap.Error(err))
+	}
+
+	return fmt.Errorf("failed to subscribe to topic '%s' after %d attempts: %w", topic, maxRetries+1, lastErr)
+}
+
+// markSubscriptionActive marks a topic subscription as active
+func (s *nudgeService) markSubscriptionActive(topic string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.subscriptions[topic] = true
+}
+
+// CheckSubscriptionHealth verifies that all required subscriptions are active
+func (s *nudgeService) CheckSubscriptionHealth() error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	requiredTopics := []string{
+		events.TopicTaskParsed,
+		events.TopicTaskListRequested,
+		events.TopicTaskActionRequested,
+	}
+
+	var missingTopics []string
+	for _, topic := range requiredTopics {
+		if !s.subscriptions[topic] {
+			missingTopics = append(missingTopics, topic)
+		}
+	}
+
+	if len(missingTopics) > 0 {
+		return NewSubscriptionHealthError(
+			missingTopics,
+			fmt.Sprintf("%d required subscriptions are not active", len(missingTopics)),
+		)
+	}
+
+	s.logger.Debug("Subscription health check passed",
+		zap.Int("active_subscriptions", len(s.subscriptions)))
+
+	return nil
 }
 
 // CreateTask creates a new task
@@ -463,6 +575,19 @@ func (s *nudgeService) handleTaskActionRequested(event events.TaskActionRequeste
 	var message string
 	success := true
 
+	// Validate the event structure first
+	if err = s.validateTaskActionRequest(event); err != nil {
+		s.logger.Error("Task action request validation failed",
+			zap.String("taskID", event.TaskID),
+			zap.String("userID", event.UserID),
+			zap.String("action", event.Action),
+			zap.Error(err))
+		message = "Invalid request: " + err.Error()
+		success = false
+		s.publishTaskActionResponse(event, success, message)
+		return
+	}
+
 	// Process the requested action
 	switch event.Action {
 	case "done", "complete":
@@ -507,27 +632,7 @@ func (s *nudgeService) handleTaskActionRequested(event events.TaskActionRequeste
 			zap.Error(err))
 	}
 
-	// Publish TaskActionResponse event
-	response := events.TaskActionResponse{
-		Event:   events.NewEvent(),
-		UserID:  event.UserID,
-		ChatID:  event.ChatID,
-		TaskID:  event.TaskID,
-		Action:  event.Action,
-		Success: success,
-		Message: message,
-	}
-
-	publishErr := s.eventBus.Publish(events.TopicTaskActionResponse, response)
-	if publishErr != nil {
-		s.logger.Error("Failed to publish TaskActionResponse event", zap.Error(publishErr))
-		return
-	}
-
-	s.logger.Info("TaskActionResponse published successfully",
-		zap.String("taskID", event.TaskID),
-		zap.String("action", event.Action),
-		zap.Bool("success", success))
+	s.publishTaskActionResponse(event, success, message)
 }
 
 // Additional service methods
@@ -683,4 +788,119 @@ func (s *nudgeService) cancelTaskReminders(taskID common.TaskID) {
 			}
 		}
 	}
+}
+
+// validateTaskActionRequest validates TaskActionRequested events
+func (s *nudgeService) validateTaskActionRequest(event events.TaskActionRequested) error {
+	// Validate required event fields
+	if event.UserID == "" {
+		return fmt.Errorf("userID is required")
+	}
+	if event.ChatID == "" {
+		return fmt.Errorf("chatID is required")
+	}
+	if event.TaskID == "" {
+		return fmt.Errorf("taskID is required")
+	}
+	if event.Action == "" {
+		return fmt.Errorf("action is required")
+	}
+
+	// Validate TaskID format
+	if !common.ID(event.TaskID).IsValid() {
+		return fmt.Errorf("taskID must be a valid UUID: %s", event.TaskID)
+	}
+
+	// Validate UserID format
+	if !common.ID(event.UserID).IsValid() {
+		return fmt.Errorf("userID must be a valid UUID: %s", event.UserID)
+	}
+
+	// Validate action is allowed
+	validActions := map[string]bool{
+		"done":     true,
+		"complete": true,
+		"delete":   true,
+		"snooze":   true,
+	}
+	if !validActions[event.Action] {
+		return NewInvalidTaskActionError(event.Action)
+	}
+
+	// Skip repository validation if repository is nil (mock mode)
+	if s.repository == nil {
+		s.logger.Debug("Skipping task validation - repository is nil (mock mode)")
+		return nil
+	}
+
+	// Validate task exists and belongs to user
+	taskID := common.TaskID(event.TaskID)
+	task, err := s.repository.GetTaskByID(taskID)
+	if err != nil {
+		if err == ErrTaskNotFound {
+			return fmt.Errorf("task not found: %s", event.TaskID)
+		}
+		return fmt.Errorf("failed to retrieve task: %w", err)
+	}
+
+	// Validate task belongs to the requesting user
+	if string(task.UserID) != event.UserID {
+		return fmt.Errorf("task %s does not belong to user %s", event.TaskID, event.UserID)
+	}
+
+	// Validate the action is valid for the current task status
+	if err := s.validateActionForTaskStatus(event.Action, task.Status); err != nil {
+		return fmt.Errorf("action validation failed: %w", err)
+	}
+
+	return nil
+}
+
+// validateActionForTaskStatus validates if an action is valid for the current task status
+func (s *nudgeService) validateActionForTaskStatus(action string, currentStatus common.TaskStatus) error {
+	switch action {
+	case "done", "complete":
+		// Can only complete active or snoozed tasks
+		if currentStatus != common.TaskStatusActive && currentStatus != common.TaskStatusSnoozed {
+			return fmt.Errorf("cannot complete task with status %s", currentStatus)
+		}
+	case "delete":
+		// Can delete tasks in any status except already deleted
+		if currentStatus == common.TaskStatusDeleted {
+			return fmt.Errorf("task is already deleted")
+		}
+	case "snooze":
+		// Can only snooze active tasks
+		if currentStatus != common.TaskStatusActive {
+			return fmt.Errorf("can only snooze active tasks, current status is %s", currentStatus)
+		}
+	}
+	return nil
+}
+
+// publishTaskActionResponse publishes a TaskActionResponse event
+func (s *nudgeService) publishTaskActionResponse(event events.TaskActionRequested, success bool, message string) {
+	response := events.TaskActionResponse{
+		Event:   events.NewEvent(),
+		UserID:  event.UserID,
+		ChatID:  event.ChatID,
+		TaskID:  event.TaskID,
+		Action:  event.Action,
+		Success: success,
+		Message: message,
+	}
+
+	publishErr := s.eventBus.Publish(events.TopicTaskActionResponse, response)
+	if publishErr != nil {
+		s.logger.Error("Failed to publish TaskActionResponse event",
+			zap.Error(publishErr),
+			zap.String("taskID", event.TaskID),
+			zap.String("action", event.Action))
+		return
+	}
+
+	s.logger.Info("TaskActionResponse published successfully",
+		zap.String("taskID", event.TaskID),
+		zap.String("action", event.Action),
+		zap.Bool("success", success))
 }

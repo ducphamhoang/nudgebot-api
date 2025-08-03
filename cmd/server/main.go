@@ -58,7 +58,10 @@ func main() {
 	}
 	llmService := llm.NewLLMService(eventBus, zapLogger, cfg.LLM)
 	nudgeRepository := nudge.NewGormNudgeRepository(db, zapLogger)
-	nudgeService := nudge.NewNudgeService(eventBus, zapLogger, nudgeRepository)
+	nudgeService, err := nudge.NewNudgeService(eventBus, zapLogger, nudgeRepository)
+	if err != nil {
+		logger.Fatal("Failed to initialize nudge service", "error", err)
+	}
 
 	// Initialize scheduler
 	var reminderScheduler scheduler.Scheduler
