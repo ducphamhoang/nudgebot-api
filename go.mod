@@ -5,11 +5,15 @@ go 1.21
 require (
 	github.com/asaskevich/EventBus v0.0.0-20200907212545-49d423059eef
 	github.com/cenkalti/backoff/v4 v4.2.1
+	github.com/gavv/httpexpect/v2 v2.16.0
 	github.com/gin-gonic/gin v1.9.1
 	github.com/go-telegram-bot-api/telegram-bot-api/v5 v5.5.1
+	github.com/golang/mock v1.6.0
 	github.com/google/uuid v1.4.0
 	github.com/spf13/viper v1.17.0
 	github.com/stretchr/testify v1.8.4
+	github.com/testcontainers/testcontainers-go v0.26.0
+	github.com/testcontainers/testcontainers-go/modules/postgres v0.26.0
 	go.uber.org/zap v1.26.0
 	gorm.io/driver/postgres v1.5.4
 	gorm.io/gorm v1.25.5
