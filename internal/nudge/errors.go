@@ -19,6 +19,10 @@ const (
 	ErrCodeInvalidAction        = "INVALID_ACTION"
 	ErrCodeSubscriptionFailed   = "SUBSCRIPTION_FAILED"
 	ErrCodeSubscriptionNotReady = "SUBSCRIPTION_NOT_READY"
+	ErrCodeTaskListFailed       = "TASK_LIST_FAILED"
+	ErrCodeUserNotFound         = "USER_NOT_FOUND"
+	ErrCodeUnauthorized         = "UNAUTHORIZED"
+	ErrCodeInvalidRequest       = "INVALID_REQUEST"
 )
 
 // NudgeError interface for nudge-specific errors
@@ -179,6 +183,41 @@ func (e InvalidTaskActionError) Temporary() bool {
 	return false
 }
 
+// TaskListError represents errors when retrieving task lists
+type TaskListError struct {
+	UserID    common.UserID
+	Details   string
+	ErrorCode string
+	Cause     error
+	Retryable bool
+}
+
+func (e TaskListError) Error() string {
+	if e.Cause != nil {
+		return fmt.Sprintf("task list retrieval failed for user '%s': %s (caused by: %v)", e.UserID, e.Details, e.Cause)
+	}
+	return fmt.Sprintf("task list retrieval failed for user '%s': %s", e.UserID, e.Details)
+}
+
+func (e TaskListError) Code() string {
+	if e.ErrorCode != "" {
+		return e.ErrorCode
+	}
+	return ErrCodeTaskListFailed
+}
+
+func (e TaskListError) Message() string {
+	return e.Details
+}
+
+func (e TaskListError) Temporary() bool {
+	return e.Retryable
+}
+
+func (e TaskListError) Unwrap() error {
+	return e.Cause
+}
+
 // Error wrapping utilities
 
 // WrapRepositoryError wraps an error as a RepositoryError
@@ -324,6 +363,36 @@ func NewSubscriptionError(topic, message string, retryable bool) SubscriptionErr
 		Topic:      topic,
 		ErrMessage: message,
 		Retryable:  retryable,
+	}
+}
+
+// NewTaskListError creates a new task list error
+func NewTaskListError(userID common.UserID, details string, cause error) TaskListError {
+	return TaskListError{
+		UserID:    userID,
+		Details:   details,
+		Cause:     cause,
+		Retryable: true, // Most task list errors can be retried
+	}
+}
+
+// NewTaskListValidationError creates a new task list validation error
+func NewTaskListValidationError(userID common.UserID, details string) TaskListError {
+	return TaskListError{
+		UserID:    userID,
+		Details:   details,
+		ErrorCode: ErrCodeValidationFailed,
+		Retryable: false, // Validation errors should not be retried
+	}
+}
+
+// NewTaskListUnauthorizedError creates a new unauthorized task list error
+func NewTaskListUnauthorizedError(userID common.UserID, details string) TaskListError {
+	return TaskListError{
+		UserID:    userID,
+		Details:   details,
+		ErrorCode: ErrCodeUnauthorized,
+		Retryable: false,
 	}
 }
 

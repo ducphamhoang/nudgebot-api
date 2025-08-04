@@ -385,10 +385,30 @@ func (s *chatbotService) handleTaskListResponse(event events.TaskListResponse) {
 		zap.String("correlation_id", event.CorrelationID),
 		zap.String("user_id", event.UserID),
 		zap.String("chat_id", event.ChatID),
-		zap.Int("task_count", len(event.Tasks)))
+		zap.Int("task_count", len(event.Tasks)),
+		zap.Bool("success", event.Success))
 
 	var messageText string
 
+	// Handle error responses
+	if !event.Success {
+		s.logger.Warn("Received error in TaskListResponse",
+			zap.String("error_code", event.ErrorCode),
+			zap.String("error_message", event.ErrorMsg))
+
+		messageText = s.formatTaskListErrorMessage(event.ErrorCode, event.ErrorMsg)
+
+		// Send error message to user
+		err := s.SendMessage(common.ChatID(event.ChatID), messageText)
+		if err != nil {
+			s.logger.Error("Failed to send task list error message",
+				zap.String("correlation_id", event.CorrelationID),
+				zap.Error(err))
+		}
+		return
+	}
+
+	// Handle successful responses
 	if len(event.Tasks) == 0 {
 		messageText = "📝 <b>Your Task List</b>\n\nYou have no active tasks. Great job! 🎉\n\nSend me a message to create a new task."
 	} else {
@@ -554,5 +574,32 @@ func (s *chatbotService) handleTaskCreated(event events.TaskCreated) {
 		s.logger.Error("Failed to send task creation confirmation",
 			zap.String("correlation_id", event.CorrelationID),
 			zap.Error(err))
+	}
+}
+
+// formatTaskListErrorMessage creates user-friendly error messages based on error codes
+func (s *chatbotService) formatTaskListErrorMessage(errorCode, errorMsg string) string {
+	switch errorCode {
+	case "VALIDATION_FAILED":
+		return "❌ <b>Invalid Request</b>\n\nThere was an issue with your request. Please try again."
+
+	case "UNAUTHORIZED":
+		return "🔒 <b>Access Denied</b>\n\nYou don't have permission to view these tasks."
+
+	case "USER_NOT_FOUND":
+		return "👤 <b>User Not Found</b>\n\nCould not find your user account. Please try signing in again."
+
+	case "REPOSITORY_ERROR":
+		return "🔧 <b>System Temporarily Unavailable</b>\n\nWe're experiencing technical difficulties. Please try again in a few moments."
+
+	case "TASK_LIST_FAILED":
+		return "📝 <b>Unable to Retrieve Tasks</b>\n\nSorry, we couldn't get your task list right now. Please try again."
+
+	default:
+		// Generic error message for unknown error codes
+		if errorMsg != "" {
+			return fmt.Sprintf("⚠️ <b>Something went wrong</b>\n\nError: %s\n\nPlease try again.", errorMsg)
+		}
+		return "⚠️ <b>Something went wrong</b>\n\nPlease try again."
 	}
 }

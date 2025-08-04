@@ -505,6 +505,16 @@ func (s *nudgeService) handleTaskListRequested(event events.TaskListRequested) {
 		zap.String("userID", event.UserID),
 		zap.String("chatID", event.ChatID))
 
+	// Validate the request
+	if err := s.validateTaskListRequest(event); err != nil {
+		s.logger.Error("Task list request validation failed",
+			zap.String("userID", event.UserID),
+			zap.String("chatID", event.ChatID),
+			zap.Error(err))
+		s.publishTaskListErrorResponse(event, err)
+		return
+	}
+
 	// Get tasks for the user
 	filter := TaskFilter{
 		UserID: common.UserID(event.UserID),
@@ -513,17 +523,19 @@ func (s *nudgeService) handleTaskListRequested(event events.TaskListRequested) {
 
 	tasks, err := s.GetTasks(common.UserID(event.UserID), filter)
 	if err != nil {
-		s.logger.Error("Failed to get tasks for list request", zap.Error(err))
-		// Send error response
-		errorResponse := events.TaskListResponse{
-			Event:      events.NewEvent(),
-			UserID:     event.UserID,
-			ChatID:     event.ChatID,
-			Tasks:      []events.TaskSummary{},
-			TotalCount: 0,
-			HasMore:    false,
+		s.logger.Error("Failed to get tasks for list request",
+			zap.String("userID", event.UserID),
+			zap.Error(err))
+
+		// Create appropriate error based on the underlying cause
+		var taskListErr TaskListError
+		if err == ErrTaskNotFound {
+			taskListErr = NewTaskListError(common.UserID(event.UserID), "No tasks found for user", err)
+		} else {
+			taskListErr = NewTaskListError(common.UserID(event.UserID), "Failed to retrieve tasks from database", err)
 		}
-		s.eventBus.Publish(events.TopicTaskListResponse, errorResponse)
+
+		s.publishTaskListErrorResponse(event, taskListErr)
 		return
 	}
 
@@ -541,7 +553,7 @@ func (s *nudgeService) handleTaskListRequested(event events.TaskListRequested) {
 		}
 	}
 
-	// Publish TaskListResponse event
+	// Publish successful TaskListResponse event
 	response := events.TaskListResponse{
 		Event:      events.NewEvent(),
 		UserID:     event.UserID,
@@ -549,11 +561,16 @@ func (s *nudgeService) handleTaskListRequested(event events.TaskListRequested) {
 		Tasks:      taskSummaries,
 		TotalCount: len(taskSummaries),
 		HasMore:    false, // Simple implementation - no pagination for now
+		Success:    true,
+		ErrorCode:  "",
+		ErrorMsg:   "",
 	}
 
 	err = s.eventBus.Publish(events.TopicTaskListResponse, response)
 	if err != nil {
-		s.logger.Error("Failed to publish TaskListResponse event", zap.Error(err))
+		s.logger.Error("Failed to publish TaskListResponse event",
+			zap.String("userID", event.UserID),
+			zap.Error(err))
 		return
 	}
 
@@ -903,4 +920,71 @@ func (s *nudgeService) publishTaskActionResponse(event events.TaskActionRequeste
 		zap.String("taskID", event.TaskID),
 		zap.String("action", event.Action),
 		zap.Bool("success", success))
+}
+
+// validateTaskListRequest validates TaskListRequested events
+func (s *nudgeService) validateTaskListRequest(event events.TaskListRequested) error {
+	// Validate required event fields
+	if event.UserID == "" {
+		return NewTaskListValidationError("", "userID is required")
+	}
+	if event.ChatID == "" {
+		return NewTaskListValidationError(common.UserID(event.UserID), "chatID is required")
+	}
+
+	// Validate UserID format
+	if !common.ID(event.UserID).IsValid() {
+		return NewTaskListValidationError(common.UserID(event.UserID),
+			fmt.Sprintf("userID must be a valid UUID: %s", event.UserID))
+	}
+
+	// Validate ChatID is not empty (format validation depends on provider)
+	if len(event.ChatID) == 0 {
+		return NewTaskListValidationError(common.UserID(event.UserID), "chatID cannot be empty")
+	}
+
+	return nil
+}
+
+// publishTaskListErrorResponse publishes a TaskListResponse event with error information
+func (s *nudgeService) publishTaskListErrorResponse(event events.TaskListRequested, err error) {
+	var errorCode, errorMsg string
+
+	// Extract error details from different error types
+	if taskListErr, ok := err.(TaskListError); ok {
+		errorCode = taskListErr.Code()
+		errorMsg = taskListErr.Message()
+	} else if nudgeErr, ok := err.(NudgeError); ok {
+		errorCode = nudgeErr.Code()
+		errorMsg = nudgeErr.Message()
+	} else {
+		errorCode = ErrCodeTaskListFailed
+		errorMsg = err.Error()
+	}
+
+	response := events.TaskListResponse{
+		Event:      events.NewEvent(),
+		UserID:     event.UserID,
+		ChatID:     event.ChatID,
+		Tasks:      []events.TaskSummary{}, // Empty task list on error
+		TotalCount: 0,
+		HasMore:    false,
+		Success:    false,
+		ErrorCode:  errorCode,
+		ErrorMsg:   errorMsg,
+	}
+
+	publishErr := s.eventBus.Publish(events.TopicTaskListResponse, response)
+	if publishErr != nil {
+		s.logger.Error("Failed to publish TaskListResponse error event",
+			zap.Error(publishErr),
+			zap.String("userID", event.UserID),
+			zap.String("originalError", errorMsg))
+		return
+	}
+
+	s.logger.Info("TaskListResponse error published successfully",
+		zap.String("userID", event.UserID),
+		zap.String("errorCode", errorCode),
+		zap.String("errorMessage", errorMsg))
 }

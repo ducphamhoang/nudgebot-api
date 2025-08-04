@@ -125,6 +125,9 @@ type TaskListResponse struct {
 	Tasks      []TaskSummary `json:"tasks"`
 	TotalCount int           `json:"total_count"`
 	HasMore    bool          `json:"has_more"`
+	Success    bool          `json:"success"`
+	ErrorCode  string        `json:"error_code,omitempty"`
+	ErrorMsg   string        `json:"error_message,omitempty"`
 }
 
 // TaskActionResponse represents an event response to task action requests
