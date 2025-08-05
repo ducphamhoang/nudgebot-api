@@ -5,8 +5,9 @@ import (
 	"testing"
 	"time"
 
+	"nudgebot-api/internal/common"
+	"nudgebot-api/internal/config"
 	"nudgebot-api/internal/events"
-	"nudgebot-api/internal/mocks"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -66,8 +67,8 @@ func TestLLMService_HandleMessageReceived(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Setup
 			logger := zaptest.NewLogger(t)
-			mockEventBus := mocks.NewMockEventBus()
-			mockLLMService := createMockLLMService(t, mockEventBus, logger)
+			mockEventBus := events.NewMockEventBus()
+			_ = createMockLLMService(t, mockEventBus, logger)
 
 			// Wait for service to initialize subscriptions
 			time.Sleep(50 * time.Millisecond)
@@ -135,8 +136,8 @@ func TestLLMService_ParseTaskFromText(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Setup
 			logger := zaptest.NewLogger(t)
-			mockEventBus := mocks.NewMockEventBus()
-			mockLLMService := createMockLLMService(t, mockEventBus, logger)
+			mockEventBus := events.NewMockEventBus()
+			_ = createMockLLMService(t, mockEventBus, logger)
 
 			// Since we're testing with a mock, we'll simulate the parsing logic
 			// In a real test, this would call the actual LLM service
@@ -161,7 +162,7 @@ func TestLLMService_ParseTaskFromText(t *testing.T) {
 func TestLLMService_EventSubscriptions(t *testing.T) {
 	// Setup
 	logger := zaptest.NewLogger(t)
-	mockEventBus := mocks.NewMockEventBus()
+	mockEventBus := events.NewMockEventBus()
 
 	// Create service (this should set up subscriptions)
 	_ = createMockLLMService(t, mockEventBus, logger)
@@ -183,8 +184,8 @@ func TestLLMService_EventSubscriptions(t *testing.T) {
 func TestLLMService_HandleMultipleMessages(t *testing.T) {
 	// Test handling multiple concurrent messages
 	logger := zaptest.NewLogger(t)
-	mockEventBus := mocks.NewMockEventBus()
-	mockLLMService := createMockLLMService(t, mockEventBus, logger)
+	mockEventBus := events.NewMockEventBus()
+	_ = createMockLLMService(t, mockEventBus, logger)
 
 	// Wait for service to initialize
 	time.Sleep(50 * time.Millisecond)
@@ -259,8 +260,8 @@ func TestLLMService_TaskParsing_EdgeCases(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			logger := zaptest.NewLogger(t)
-			mockEventBus := mocks.NewMockEventBus()
-			mockLLMService := createMockLLMService(t, mockEventBus, logger)
+			mockEventBus := events.NewMockEventBus()
+			_ = createMockLLMService(t, mockEventBus, logger)
 
 			// Wait for service to initialize
 			time.Sleep(50 * time.Millisecond)
@@ -328,8 +329,8 @@ func TestLLMService_TaskParsing_DateFormats(t *testing.T) {
 	for _, tt := range dateTests {
 		t.Run(tt.name, func(t *testing.T) {
 			logger := zaptest.NewLogger(t)
-			mockEventBus := mocks.NewMockEventBus()
-			mockLLMService := createMockLLMService(t, mockEventBus, logger)
+			mockEventBus := events.NewMockEventBus()
+			_ = createMockLLMService(t, mockEventBus, logger)
 
 			// Wait for service to initialize
 			time.Sleep(50 * time.Millisecond)
@@ -386,8 +387,8 @@ func TestLLMService_TaskParsing_PriorityDetection(t *testing.T) {
 	for _, tt := range priorityTests {
 		t.Run(tt.name, func(t *testing.T) {
 			logger := zaptest.NewLogger(t)
-			mockEventBus := mocks.NewMockEventBus()
-			mockLLMService := createMockLLMService(t, mockEventBus, logger)
+			mockEventBus := events.NewMockEventBus()
+			_ = createMockLLMService(t, mockEventBus, logger)
 
 			// Wait for service to initialize
 			time.Sleep(50 * time.Millisecond)
@@ -406,17 +407,16 @@ func TestLLMService_TaskParsing_PriorityDetection(t *testing.T) {
 func TestLLMService_Integration_MessageToTaskFlow(t *testing.T) {
 	// Integration test for the complete message-to-task flow
 	logger := zaptest.NewLogger(t)
-	mockEventBus := mocks.NewMockEventBus()
-	mockLLMService := createMockLLMService(t, mockEventBus, logger)
+	mockEventBus := events.NewMockEventBus()
+	_ = createMockLLMService(t, mockEventBus, logger)
 
 	// Wait for service to initialize
 	time.Sleep(50 * time.Millisecond)
 
 	// Track TaskParsed events
-	var capturedTaskParsed *events.TaskParsed
 	mockEventBus.Subscribe(events.TopicTaskParsed, func(event interface{}) error {
 		if parsed, ok := event.(events.TaskParsed); ok {
-			capturedTaskParsed = &parsed
+			_ = parsed // Event received successfully
 		}
 		return nil
 	})
@@ -451,16 +451,16 @@ func createMockLLMService(t *testing.T, eventBus events.EventBus, logger *zap.Lo
 	// Create a mock LLM service for testing
 	// In a real implementation, this would use dependency injection with mocked providers
 
-	service, err := NewLLMService(eventBus, logger)
-	if err != nil {
-		t.Logf("Note: LLM service creation may fail in test environment: %v", err)
-		// Return a mock service for testing
-		return &mockLLMService{
-			eventBus: eventBus,
-			logger:   logger,
-		}
+	// Create minimal config for testing
+	cfg := config.LLMConfig{
+		APIEndpoint: "http://localhost:8080",
+		APIKey:      "test-key",
+		Model:       "test-model",
+		Timeout:     30,
+		MaxRetries:  3,
 	}
 
+	service := NewLLMService(eventBus, logger, cfg)
 	return service
 }
 
@@ -521,6 +521,39 @@ type mockLLMService struct {
 	logger   *zap.Logger
 }
 
+func (m *mockLLMService) ParseTask(text string, userID common.UserID) (*LLMResponse, error) {
+	// Mock implementation
+	eventsTask := createMockParsedTask(text)
+
+	// Convert events.ParsedTask to llm.ParsedTask
+	llmTask := ParsedTask{
+		Title:       eventsTask.Title,
+		Description: eventsTask.Description,
+		DueDate:     eventsTask.DueDate,
+		Priority:    common.Priority(eventsTask.Priority),
+		Tags:        eventsTask.Tags,
+	}
+
+	return &LLMResponse{
+		ParsedTask: llmTask,
+		Confidence: 0.8,
+	}, nil
+}
+
+func (m *mockLLMService) ValidateTask(parsedTask ParsedTask) error {
+	// Mock validation always passes
+	return nil
+}
+
+func (m *mockLLMService) GetSuggestions(partialText string, userID common.UserID) ([]string, error) {
+	// Mock suggestions
+	return []string{
+		"Buy groceries",
+		"Call dentist",
+		"Schedule meeting",
+	}, nil
+}
+
 func (m *mockLLMService) HandleMessageReceived(event events.MessageReceived) error {
 	// Mock implementation that simulates LLM processing
 	m.logger.Info("Mock LLM processing message",
@@ -558,7 +591,7 @@ func isGreeting(text string) bool {
 func TestMockLLMService_Functionality(t *testing.T) {
 	// Test the mock LLM service directly
 	logger := zaptest.NewLogger(t)
-	mockEventBus := mocks.NewMockEventBus()
+	mockEventBus := events.NewMockEventBus()
 	mockService := &mockLLMService{
 		eventBus: mockEventBus,
 		logger:   logger,

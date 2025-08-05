@@ -1,20 +1,19 @@
-//go:generate mockgen -source=../nudge/repository.go -destination=nudge_repository_mocks.go -package=mocks
+//go:generate mockgen -source=../nudge/repository.go -destination=nudge_repository_mocks.go -package=nudge
 
-package mocks
+package nudge
 
 import (
 	"sync"
 	"time"
 
 	"nudgebot-api/internal/common"
-	"nudgebot-api/internal/nudge"
 )
 
 // EnhancedMockNudgeRepository provides an advanced in-memory implementation for testing
 type EnhancedMockNudgeRepository struct {
-	tasks     map[string]*nudge.Task
-	reminders map[string]*nudge.Reminder
-	settings  map[string]*nudge.NudgeSettings
+	tasks     map[string]*Task
+	reminders map[string]*Reminder
+	settings  map[string]*NudgeSettings
 	mutex     sync.RWMutex
 	errors    map[string]error
 	callCount map[string]int
@@ -23,9 +22,9 @@ type EnhancedMockNudgeRepository struct {
 // NewEnhancedMockNudgeRepository creates a new enhanced mock repository
 func NewEnhancedMockNudgeRepository() *EnhancedMockNudgeRepository {
 	return &EnhancedMockNudgeRepository{
-		tasks:     make(map[string]*nudge.Task),
-		reminders: make(map[string]*nudge.Reminder),
-		settings:  make(map[string]*nudge.NudgeSettings),
+		tasks:     make(map[string]*Task),
+		reminders: make(map[string]*Reminder),
+		settings:  make(map[string]*NudgeSettings),
 		errors:    make(map[string]error),
 		callCount: make(map[string]int),
 	}
@@ -39,7 +38,7 @@ func (m *EnhancedMockNudgeRepository) SetupTestData() {
 	defer m.mutex.Unlock()
 
 	// Create test tasks
-	task1 := m.createTestTask("user1", "Test Task 1")
+	task1 := m.CreateTestTask("user1", "Test Task 1")
 	task2 := m.createOverdueTask("user1")
 	task3 := m.createCompletedTask("user1")
 
@@ -52,7 +51,7 @@ func (m *EnhancedMockNudgeRepository) SetupTestData() {
 	m.reminders[string(reminder1.ID)] = reminder1
 
 	// Create test settings
-	settings := &nudge.NudgeSettings{
+	settings := &NudgeSettings{
 		UserID:        "user1",
 		NudgeInterval: time.Hour,
 		MaxNudges:     3,
@@ -68,9 +67,9 @@ func (m *EnhancedMockNudgeRepository) ClearData() {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	m.tasks = make(map[string]*nudge.Task)
-	m.reminders = make(map[string]*nudge.Reminder)
-	m.settings = make(map[string]*nudge.NudgeSettings)
+	m.tasks = make(map[string]*Task)
+	m.reminders = make(map[string]*Reminder)
+	m.settings = make(map[string]*NudgeSettings)
 	m.callCount = make(map[string]int)
 }
 
@@ -104,7 +103,7 @@ func (m *EnhancedMockNudgeRepository) checkError(operation string) error {
 // Task operations - implementing the NudgeRepository interface
 
 // CreateTask creates a new task
-func (m *EnhancedMockNudgeRepository) CreateTask(task *nudge.Task) error {
+func (m *EnhancedMockNudgeRepository) CreateTask(task *Task) error {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 	m.incrementCallCount("CreateTask")
@@ -117,7 +116,7 @@ func (m *EnhancedMockNudgeRepository) CreateTask(task *nudge.Task) error {
 	for _, existingTask := range m.tasks {
 		if existingTask.UserID == task.UserID && existingTask.Title == task.Title &&
 			(existingTask.Status == common.TaskStatusActive || existingTask.Status == common.TaskStatusSnoozed) {
-			return nudge.NewTaskValidationError("title", task.Title, "task with this title already exists")
+			return NewTaskValidationError("title", task.Title, "task with this title already exists")
 		}
 	}
 
@@ -136,7 +135,7 @@ func (m *EnhancedMockNudgeRepository) CreateTask(task *nudge.Task) error {
 }
 
 // GetTaskByID retrieves a task by ID
-func (m *EnhancedMockNudgeRepository) GetTaskByID(taskID common.TaskID) (*nudge.Task, error) {
+func (m *EnhancedMockNudgeRepository) GetTaskByID(taskID common.TaskID) (*Task, error) {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
 	m.incrementCallCount("GetTaskByID")
@@ -156,7 +155,7 @@ func (m *EnhancedMockNudgeRepository) GetTaskByID(taskID common.TaskID) (*nudge.
 }
 
 // GetTasksByUserID retrieves tasks for a user with filtering
-func (m *EnhancedMockNudgeRepository) GetTasksByUserID(userID common.UserID, filter nudge.TaskFilter) ([]*nudge.Task, error) {
+func (m *EnhancedMockNudgeRepository) GetTasksByUserID(userID common.UserID, filter TaskFilter) ([]*Task, error) {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
 	m.incrementCallCount("GetTasksByUserID")
@@ -165,7 +164,7 @@ func (m *EnhancedMockNudgeRepository) GetTasksByUserID(userID common.UserID, fil
 		return nil, err
 	}
 
-	var result []*nudge.Task
+	var result []*Task
 	for _, task := range m.tasks {
 		if task.UserID != userID {
 			continue
@@ -190,19 +189,26 @@ func (m *EnhancedMockNudgeRepository) GetTasksByUserID(userID common.UserID, fil
 		result = append(result, &taskCopy)
 	}
 
-	// Apply pagination
-	if filter.Offset > 0 && filter.Offset < len(result) {
+	// Apply pagination with bounds checking
+	if filter.Offset > 0 {
+		if filter.Offset >= len(result) {
+			// Offset exceeds result length, return empty slice
+			return []*Task{}, nil
+		}
 		result = result[filter.Offset:]
 	}
-	if filter.Limit > 0 && filter.Limit < len(result) {
-		result = result[:filter.Limit]
+	if filter.Limit > 0 {
+		if filter.Limit < len(result) {
+			result = result[:filter.Limit]
+		}
+		// If limit >= len(result), no need to slice further
 	}
 
 	return result, nil
 }
 
 // UpdateTask updates an existing task
-func (m *EnhancedMockNudgeRepository) UpdateTask(task *nudge.Task) error {
+func (m *EnhancedMockNudgeRepository) UpdateTask(task *Task) error {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 	m.incrementCallCount("UpdateTask")
@@ -241,7 +247,7 @@ func (m *EnhancedMockNudgeRepository) DeleteTask(taskID common.TaskID) error {
 }
 
 // GetTaskStats retrieves task statistics for a user
-func (m *EnhancedMockNudgeRepository) GetTaskStats(userID common.UserID) (*nudge.TaskStats, error) {
+func (m *EnhancedMockNudgeRepository) GetTaskStats(userID common.UserID) (*TaskStats, error) {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
 	m.incrementCallCount("GetTaskStats")
@@ -250,7 +256,7 @@ func (m *EnhancedMockNudgeRepository) GetTaskStats(userID common.UserID) (*nudge
 		return nil, err
 	}
 
-	stats := &nudge.TaskStats{}
+	stats := &TaskStats{}
 	now := time.Now()
 
 	for _, task := range m.tasks {
@@ -277,7 +283,7 @@ func (m *EnhancedMockNudgeRepository) GetTaskStats(userID common.UserID) (*nudge
 // Reminder operations
 
 // CreateReminder creates a new reminder
-func (m *EnhancedMockNudgeRepository) CreateReminder(reminder *nudge.Reminder) error {
+func (m *EnhancedMockNudgeRepository) CreateReminder(reminder *Reminder) error {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 	m.incrementCallCount("CreateReminder")
@@ -301,7 +307,7 @@ func (m *EnhancedMockNudgeRepository) CreateReminder(reminder *nudge.Reminder) e
 }
 
 // GetDueReminders retrieves reminders due before the specified time
-func (m *EnhancedMockNudgeRepository) GetDueReminders(before time.Time) ([]*nudge.Reminder, error) {
+func (m *EnhancedMockNudgeRepository) GetDueReminders(before time.Time) ([]*Reminder, error) {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
 	m.incrementCallCount("GetDueReminders")
@@ -310,7 +316,7 @@ func (m *EnhancedMockNudgeRepository) GetDueReminders(before time.Time) ([]*nudg
 		return nil, err
 	}
 
-	var result []*nudge.Reminder
+	var result []*Reminder
 	for _, reminder := range m.reminders {
 		if reminder.ScheduledAt.Before(before) && reminder.SentAt == nil {
 			reminderCopy := *reminder
@@ -342,7 +348,7 @@ func (m *EnhancedMockNudgeRepository) MarkReminderSent(reminderID common.ID) err
 }
 
 // GetRemindersByTaskID retrieves reminders for a specific task
-func (m *EnhancedMockNudgeRepository) GetRemindersByTaskID(taskID common.TaskID) ([]*nudge.Reminder, error) {
+func (m *EnhancedMockNudgeRepository) GetRemindersByTaskID(taskID common.TaskID) ([]*Reminder, error) {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
 	m.incrementCallCount("GetRemindersByTaskID")
@@ -351,7 +357,7 @@ func (m *EnhancedMockNudgeRepository) GetRemindersByTaskID(taskID common.TaskID)
 		return nil, err
 	}
 
-	var result []*nudge.Reminder
+	var result []*Reminder
 	for _, reminder := range m.reminders {
 		if reminder.TaskID == taskID {
 			reminderCopy := *reminder
@@ -383,7 +389,7 @@ func (m *EnhancedMockNudgeRepository) DeleteReminder(reminderID common.ID) error
 // Nudge settings operations
 
 // GetNudgeSettingsByUserID retrieves nudge settings for a user
-func (m *EnhancedMockNudgeRepository) GetNudgeSettingsByUserID(userID common.UserID) (*nudge.NudgeSettings, error) {
+func (m *EnhancedMockNudgeRepository) GetNudgeSettingsByUserID(userID common.UserID) (*NudgeSettings, error) {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
 	m.incrementCallCount("GetNudgeSettingsByUserID")
@@ -396,7 +402,7 @@ func (m *EnhancedMockNudgeRepository) GetNudgeSettingsByUserID(userID common.Use
 	if !exists {
 		// Return default settings
 		now := time.Now()
-		return &nudge.NudgeSettings{
+		return &NudgeSettings{
 			UserID:        userID,
 			NudgeInterval: time.Hour,
 			MaxNudges:     3,
@@ -412,7 +418,7 @@ func (m *EnhancedMockNudgeRepository) GetNudgeSettingsByUserID(userID common.Use
 }
 
 // CreateOrUpdateNudgeSettings creates or updates nudge settings
-func (m *EnhancedMockNudgeRepository) CreateOrUpdateNudgeSettings(settings *nudge.NudgeSettings) error {
+func (m *EnhancedMockNudgeRepository) CreateOrUpdateNudgeSettings(settings *NudgeSettings) error {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 	m.incrementCallCount("CreateOrUpdateNudgeSettings")
@@ -450,7 +456,7 @@ func (m *EnhancedMockNudgeRepository) DeleteNudgeSettings(userID common.UserID) 
 }
 
 // WithTransaction executes a function within a simulated transaction
-func (m *EnhancedMockNudgeRepository) WithTransaction(fn func(nudge.NudgeRepository) error) error {
+func (m *EnhancedMockNudgeRepository) WithTransaction(fn func(NudgeRepository) error) error {
 	m.incrementCallCount("WithTransaction")
 
 	if err := m.checkError("WithTransaction"); err != nil {
@@ -465,29 +471,11 @@ func (m *EnhancedMockNudgeRepository) WithTransaction(fn func(nudge.NudgeReposit
 // Factory methods for creating test data
 
 // CreateTestTask creates a test task with common defaults
-func (m *EnhancedMockNudgeRepository) CreateTestTask(userID, title string) *nudge.Task {
+func (m *EnhancedMockNudgeRepository) CreateTestTask(userID, title string) *Task {
 	now := time.Now()
 	dueDate := now.Add(24 * time.Hour)
 
-	return &nudge.Task{
-		ID:          common.TaskID(common.NewID()),
-		UserID:      common.UserID(userID),
-		Title:       title,
-		Description: "Test description",
-		DueDate:     &dueDate,
-		Priority:    common.PriorityMedium,
-		Status:      common.TaskStatusActive,
-		CreatedAt:   now,
-		UpdatedAt:   now,
-	}
-}
-
-// createTestTask is the internal version that doesn't lock
-func (m *EnhancedMockNudgeRepository) createTestTask(userID, title string) *nudge.Task {
-	now := time.Now()
-	dueDate := now.Add(24 * time.Hour)
-
-	return &nudge.Task{
+	return &Task{
 		ID:          common.TaskID(common.NewID()),
 		UserID:      common.UserID(userID),
 		Title:       title,
@@ -501,11 +489,11 @@ func (m *EnhancedMockNudgeRepository) createTestTask(userID, title string) *nudg
 }
 
 // CreateOverdueTask creates an overdue test task
-func (m *EnhancedMockNudgeRepository) CreateOverdueTask(userID string) *nudge.Task {
+func (m *EnhancedMockNudgeRepository) CreateOverdueTask(userID string) *Task {
 	now := time.Now()
 	dueDate := now.Add(-2 * time.Hour) // 2 hours ago
 
-	return &nudge.Task{
+	return &Task{
 		ID:          common.TaskID(common.NewID()),
 		UserID:      common.UserID(userID),
 		Title:       "Overdue Task",
@@ -519,11 +507,11 @@ func (m *EnhancedMockNudgeRepository) CreateOverdueTask(userID string) *nudge.Ta
 }
 
 // createOverdueTask is the internal version that doesn't lock
-func (m *EnhancedMockNudgeRepository) createOverdueTask(userID string) *nudge.Task {
+func (m *EnhancedMockNudgeRepository) createOverdueTask(userID string) *Task {
 	now := time.Now()
 	dueDate := now.Add(-2 * time.Hour) // 2 hours ago
 
-	return &nudge.Task{
+	return &Task{
 		ID:          common.TaskID(common.NewID()),
 		UserID:      common.UserID(userID),
 		Title:       "Overdue Task",
@@ -537,11 +525,11 @@ func (m *EnhancedMockNudgeRepository) createOverdueTask(userID string) *nudge.Ta
 }
 
 // CreateCompletedTask creates a completed test task
-func (m *EnhancedMockNudgeRepository) CreateCompletedTask(userID string) *nudge.Task {
+func (m *EnhancedMockNudgeRepository) CreateCompletedTask(userID string) *Task {
 	now := time.Now()
 	completedAt := now.Add(-1 * time.Hour)
 
-	return &nudge.Task{
+	return &Task{
 		ID:          common.TaskID(common.NewID()),
 		UserID:      common.UserID(userID),
 		Title:       "Completed Task",
@@ -556,11 +544,11 @@ func (m *EnhancedMockNudgeRepository) CreateCompletedTask(userID string) *nudge.
 }
 
 // createCompletedTask is the internal version that doesn't lock
-func (m *EnhancedMockNudgeRepository) createCompletedTask(userID string) *nudge.Task {
+func (m *EnhancedMockNudgeRepository) createCompletedTask(userID string) *Task {
 	now := time.Now()
 	completedAt := now.Add(-1 * time.Hour)
 
-	return &nudge.Task{
+	return &Task{
 		ID:          common.TaskID(common.NewID()),
 		UserID:      common.UserID(userID),
 		Title:       "Completed Task",
@@ -575,15 +563,15 @@ func (m *EnhancedMockNudgeRepository) createCompletedTask(userID string) *nudge.
 }
 
 // createTestReminder creates a test reminder
-func (m *EnhancedMockNudgeRepository) createTestReminder(taskID common.TaskID, userID common.UserID) *nudge.Reminder {
+func (m *EnhancedMockNudgeRepository) createTestReminder(taskID common.TaskID, userID common.UserID) *Reminder {
 	now := time.Now()
 
-	return &nudge.Reminder{
+	return &Reminder{
 		ID:           common.ID(common.NewID()),
 		TaskID:       taskID,
 		UserID:       userID,
 		ScheduledAt:  now.Add(30 * time.Minute),
-		ReminderType: nudge.ReminderTypeInitial,
+		ReminderType: ReminderTypeInitial,
 	}
 }
 
@@ -607,7 +595,7 @@ func (v *MockTaskValidator) SetShouldFail(shouldFail bool, err error) {
 }
 
 // ValidateTask validates a task (mock implementation)
-func (v *MockTaskValidator) ValidateTask(task *nudge.Task) error {
+func (v *MockTaskValidator) ValidateTask(task *Task) error {
 	if v.shouldFail {
 		return v.failureError
 	}
@@ -623,7 +611,7 @@ func (v *MockTaskValidator) ValidateStatusTransition(from, to common.TaskStatus)
 }
 
 // ValidateTaskFilter validates task filters (mock implementation)
-func (v *MockTaskValidator) ValidateTaskFilter(filter nudge.TaskFilter) error {
+func (v *MockTaskValidator) ValidateTaskFilter(filter TaskFilter) error {
 	if v.shouldFail {
 		return v.failureError
 	}
@@ -647,17 +635,17 @@ func NewMockReminderManager() *MockReminderManager {
 }
 
 // CalculateReminderTime calculates reminder time (mock implementation)
-func (rm *MockReminderManager) CalculateReminderTime(task *nudge.Task, settings *nudge.NudgeSettings) time.Time {
+func (rm *MockReminderManager) CalculateReminderTime(task *Task, settings *NudgeSettings) time.Time {
 	return rm.reminderTime
 }
 
 // ShouldCreateNudge determines if a nudge should be created (mock implementation)
-func (rm *MockReminderManager) ShouldCreateNudge(task *nudge.Task, reminderCount int, settings *nudge.NudgeSettings) bool {
+func (rm *MockReminderManager) ShouldCreateNudge(task *Task, reminderCount int, settings *NudgeSettings) bool {
 	return rm.shouldNudge
 }
 
 // GetNextNudgeTime calculates next nudge time (mock implementation)
-func (rm *MockReminderManager) GetNextNudgeTime(lastNudge time.Time, settings *nudge.NudgeSettings) time.Time {
+func (rm *MockReminderManager) GetNextNudgeTime(lastNudge time.Time, settings *NudgeSettings) time.Time {
 	return rm.nextNudgeTime
 }
 
@@ -679,7 +667,7 @@ func (sm *MockStatusManager) SetShouldFail(shouldFail bool, err error) {
 }
 
 // TransitionStatus handles status transitions (mock implementation)
-func (sm *MockStatusManager) TransitionStatus(task *nudge.Task, newStatus common.TaskStatus) error {
+func (sm *MockStatusManager) TransitionStatus(task *Task, newStatus common.TaskStatus) error {
 	if sm.shouldFail {
 		return sm.failureError
 	}
@@ -696,7 +684,7 @@ func (sm *MockStatusManager) TransitionStatus(task *nudge.Task, newStatus common
 }
 
 // CompleteTask completes a task (mock implementation)
-func (sm *MockStatusManager) CompleteTask(task *nudge.Task) error {
+func (sm *MockStatusManager) CompleteTask(task *Task) error {
 	if sm.shouldFail {
 		return sm.failureError
 	}
@@ -710,7 +698,7 @@ func (sm *MockStatusManager) CompleteTask(task *nudge.Task) error {
 }
 
 // SnoozeTask snoozes a task (mock implementation)
-func (sm *MockStatusManager) SnoozeTask(task *nudge.Task, snoozeUntil time.Time) error {
+func (sm *MockStatusManager) SnoozeTask(task *Task, snoozeUntil time.Time) error {
 	if sm.shouldFail {
 		return sm.failureError
 	}
@@ -723,7 +711,7 @@ func (sm *MockStatusManager) SnoozeTask(task *nudge.Task, snoozeUntil time.Time)
 }
 
 // DeleteTask deletes a task (mock implementation)
-func (sm *MockStatusManager) DeleteTask(task *nudge.Task) error {
+func (sm *MockStatusManager) DeleteTask(task *Task) error {
 	if sm.shouldFail {
 		return sm.failureError
 	}

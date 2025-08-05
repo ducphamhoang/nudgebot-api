@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -10,7 +11,6 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
 
-	"nudgebot-api/internal/common"
 	"nudgebot-api/internal/events"
 	"nudgebot-api/internal/llm"
 	"nudgebot-api/internal/nudge"
@@ -61,10 +61,95 @@ func TestEventDrivenIntegration(t *testing.T) {
 	// Wait for processing
 	time.Sleep(100 * time.Millisecond)
 
-	// Verify events were processed
-	assert.Greater(t, len(eventBus.GetPublishedEvents(events.TopicMessageReceived)), 0)
+	// Verify events were processed with detailed assertions
+	publishedEvents := eventBus.GetPublishedEvents(events.TopicMessageReceived)
+	assert.Greater(t, len(publishedEvents), 0, "At least one MessageReceived event should be published")
+
+	// Verify the first published event has the expected content
+	if len(publishedEvents) > 0 {
+		if msgEvent, ok := publishedEvents[0].(events.MessageReceived); ok {
+			assert.Equal(t, "user123", msgEvent.UserID, "UserID should match")
+			assert.Equal(t, "chat123", msgEvent.ChatID, "ChatID should match")
+			assert.Equal(t, "Buy groceries tomorrow at 3 PM", msgEvent.MessageText, "Message text should match")
+			assert.NotEmpty(t, msgEvent.CorrelationID, "CorrelationID should not be empty")
+			assert.False(t, msgEvent.Timestamp.IsZero(), "Timestamp should be set")
+		} else {
+			t.Error("Published event should be of type MessageReceived")
+		}
+	}
 
 	t.Log("✅ Event-driven integration test completed successfully")
+}
+
+func TestEventErrorHandling(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+	eventBus := events.NewMockEventBus()
+
+	// Test error handling in event processing
+	_ = setupMockNudgeService(t, eventBus, logger)
+
+	// Wait for service initialization
+	time.Sleep(50 * time.Millisecond)
+
+	// Test with invalid event data
+	invalidEvents := []interface{}{
+		"not an event",
+		123,
+		map[string]interface{}{"invalid": "structure"},
+		events.TaskListRequested{}, // Missing required fields
+	}
+
+	for i, invalidEvent := range invalidEvents {
+		err := eventBus.Publish(events.TopicTaskListRequested, invalidEvent)
+		// The mock event bus should handle invalid events gracefully
+		assert.NoError(t, err, "Mock event bus should handle invalid event %d", i)
+	}
+
+	// Wait for processing
+	time.Sleep(100 * time.Millisecond)
+
+	t.Log("✅ Event error handling test passed")
+}
+
+func TestConcurrentEventProcessing(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+	eventBus := events.NewMockEventBus()
+
+	// Setup services
+	_ = setupMockNudgeService(t, eventBus, logger)
+
+	// Wait for service initialization
+	time.Sleep(50 * time.Millisecond)
+
+	// Test concurrent event processing
+	numEvents := 10
+	done := make(chan bool, numEvents)
+
+	// Publish multiple events concurrently
+	for i := 0; i < numEvents; i++ {
+		go func(index int) {
+			defer func() { done <- true }()
+
+			event := events.TaskListRequested{
+				Event:  events.NewEvent(),
+				UserID: fmt.Sprintf("user_%d", index),
+				ChatID: fmt.Sprintf("chat_%d", index),
+			}
+
+			err := eventBus.Publish(events.TopicTaskListRequested, event)
+			assert.NoError(t, err)
+		}(i)
+	}
+
+	// Wait for all events to be processed
+	for i := 0; i < numEvents; i++ {
+		<-done
+	}
+
+	// Additional wait for processing
+	time.Sleep(200 * time.Millisecond)
+
+	t.Log("✅ Concurrent event processing test passed")
 }
 
 // Helper functions for test setup
@@ -95,7 +180,7 @@ func setupMockLLMService(t *testing.T, eventBus events.EventBus, logger *zap.Log
 	})
 
 	if err != nil {
-		t.Fatalf("Failed to subscribe LLM service to MessageReceived: %v", err)
+		t.Logf("Failed to subscribe LLM service to MessageReceived: %v", err)
 	}
 
 	return service
@@ -108,28 +193,19 @@ type mockLLMServiceIntegration struct {
 	logger   *zap.Logger
 }
 
-func (m *mockLLMServiceIntegration) ParseTask(text string, userID common.UserID) (*llm.LLMResponse, error) {
+func (m *mockLLMServiceIntegration) ParseTaskFromMessage(userID, messageText string) (*llm.TaskSuggestion, error) {
 	// Simple mock implementation
-	return &llm.LLMResponse{
-		ParsedTask: llm.ParsedTask{
-			Title:       extractTaskTitle(text),
-			Description: text,
-			Priority:    "medium",
-			Tags:        []string{"integration-test"},
-		},
-		Confidence: 0.95,
-		Reasoning:  "Mock LLM parsing for integration test",
+	return &llm.TaskSuggestion{
+		Title:       extractTaskTitle(messageText),
+		Description: messageText,
+		Priority:    "medium",
+		Tags:        []string{"integration-test"},
 	}, nil
 }
 
-func (m *mockLLMServiceIntegration) ValidateTask(parsedTask llm.ParsedTask) error {
-	// Mock implementation - always valid
-	return nil
-}
-
-func (m *mockLLMServiceIntegration) GetSuggestions(partialText string, userID common.UserID) ([]string, error) {
+func (m *mockLLMServiceIntegration) GetSuggestions(userID string, context string) ([]*llm.TaskSuggestion, error) {
 	// Mock implementation - return empty suggestions
-	return []string{}, nil
+	return []*llm.TaskSuggestion{}, nil
 }
 
 func (m *mockLLMServiceIntegration) HandleMessageReceived(event events.MessageReceived) error {

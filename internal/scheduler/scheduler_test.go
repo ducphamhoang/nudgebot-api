@@ -9,7 +9,6 @@ import (
 	"nudgebot-api/internal/common"
 	"nudgebot-api/internal/config"
 	"nudgebot-api/internal/events"
-	"nudgebot-api/internal/mocks"
 	"nudgebot-api/internal/nudge"
 
 	"github.com/stretchr/testify/assert"
@@ -75,8 +74,8 @@ func TestScheduler_StartStop(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockRepo := mocks.NewEnhancedMockNudgeRepository()
-			mockEventBus := mocks.NewMockEventBus()
+			mockRepo := nudge.NewEnhancedMockNudgeRepository()
+			mockEventBus := events.NewMockEventBus()
 			logger := zap.NewNop()
 
 			scheduler, err := NewScheduler(tt.config, mockRepo, mockEventBus, logger)
@@ -168,8 +167,8 @@ func TestScheduler_ProcessReminders(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockRepo := mocks.NewEnhancedMockNudgeRepository()
-			mockEventBus := mocks.NewMockEventBus()
+			mockRepo := nudge.NewEnhancedMockNudgeRepository()
+			mockEventBus := events.NewMockEventBus()
 			logger := zap.NewNop()
 
 			config := config.SchedulerConfig{
@@ -289,8 +288,8 @@ func TestScheduler_NudgeCreation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockRepo := mocks.NewEnhancedMockNudgeRepository()
-			mockEventBus := mocks.NewMockEventBus()
+			mockRepo := nudge.NewEnhancedMockNudgeRepository()
+			mockEventBus := events.NewMockEventBus()
 			logger := zap.NewNop()
 
 			config := config.SchedulerConfig{
@@ -301,7 +300,7 @@ func TestScheduler_NudgeCreation(t *testing.T) {
 				Enabled:         true,
 			}
 
-			scheduler, err := NewScheduler(config, mockRepo, mockEventBus, logger)
+			_, err := NewScheduler(config, mockRepo, mockEventBus, logger)
 			require.NoError(t, err)
 
 			// Set up test data
@@ -352,19 +351,19 @@ func TestScheduler_NudgeCreation(t *testing.T) {
 func TestScheduler_ErrorHandling(t *testing.T) {
 	tests := []struct {
 		name        string
-		setupMocks  func(*mocks.EnhancedMockNudgeRepository, *mocks.MockEventBus)
+		setupMocks  func(*nudge.EnhancedMockNudgeRepository, *events.MockEventBus)
 		expectError bool
 	}{
 		{
 			name: "repository connection failure",
-			setupMocks: func(repo *mocks.EnhancedMockNudgeRepository, bus *mocks.MockEventBus) {
+			setupMocks: func(repo *nudge.EnhancedMockNudgeRepository, bus *events.MockEventBus) {
 				repo.SetError("GetDueReminders", errors.New("connection failed"))
 			},
 			expectError: true,
 		},
 		{
 			name: "event bus publish failure",
-			setupMocks: func(repo *mocks.EnhancedMockNudgeRepository, bus *mocks.MockEventBus) {
+			setupMocks: func(repo *nudge.EnhancedMockNudgeRepository, bus *events.MockEventBus) {
 				reminder := &nudge.Reminder{
 					ID:           common.ID(common.NewID()),
 					TaskID:       common.TaskID(common.NewID()),
@@ -381,8 +380,8 @@ func TestScheduler_ErrorHandling(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockRepo := mocks.NewEnhancedMockNudgeRepository()
-			mockEventBus := mocks.NewMockEventBus()
+			mockRepo := nudge.NewEnhancedMockNudgeRepository()
+			mockEventBus := events.NewMockEventBus()
 			logger := zap.NewNop()
 
 			config := config.SchedulerConfig{
@@ -422,8 +421,8 @@ func TestScheduler_ErrorHandling(t *testing.T) {
 }
 
 func TestScheduler_Metrics(t *testing.T) {
-	mockRepo := mocks.NewEnhancedMockNudgeRepository()
-	mockEventBus := mocks.NewMockEventBus()
+	mockRepo := nudge.NewEnhancedMockNudgeRepository()
+	mockEventBus := events.NewMockEventBus()
 	logger := zap.NewNop()
 
 	config := config.SchedulerConfig{
@@ -477,8 +476,8 @@ func TestScheduler_Metrics(t *testing.T) {
 }
 
 func TestScheduler_ConcurrentWorkers(t *testing.T) {
-	mockRepo := mocks.NewEnhancedMockNudgeRepository()
-	mockEventBus := mocks.NewMockEventBus()
+	mockRepo := nudge.NewEnhancedMockNudgeRepository()
+	mockEventBus := events.NewMockEventBus()
 	logger := zap.NewNop()
 
 	config := config.SchedulerConfig{
@@ -532,8 +531,8 @@ func TestScheduler_GracefulShutdown(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockRepo := mocks.NewEnhancedMockNudgeRepository()
-			mockEventBus := mocks.NewMockEventBus()
+			mockRepo := nudge.NewEnhancedMockNudgeRepository()
+			mockEventBus := events.NewMockEventBus()
 			logger := zap.NewNop()
 
 			config := config.SchedulerConfig{
@@ -572,8 +571,8 @@ func TestScheduler_GracefulShutdown(t *testing.T) {
 }
 
 func TestScheduler_DoubleStartStop(t *testing.T) {
-	mockRepo := mocks.NewEnhancedMockNudgeRepository()
-	mockEventBus := mocks.NewMockEventBus()
+	mockRepo := nudge.NewEnhancedMockNudgeRepository()
+	mockEventBus := events.NewMockEventBus()
 	logger := zap.NewNop()
 
 	config := config.SchedulerConfig{

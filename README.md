@@ -1,9 +1,9 @@
 # 🤖 NudgeBot API
 
-[![CI/CD Pipeline](https://github.com/yourusername/nudgebot-api/workflows/CI/CD%20Pipeline/badge.svg)](https://github.com/yourusername/nudgebot-api/actions)
-[![Go Report Card](https://goreportcard.com/badge/github.com/yourusername/nudgebot-api)](https://goreportcard.com/report/github.com/yourusername/nudgebot-api)
-[![Coverage Status](https://codecov.io/gh/yourusername/nudgebot-api/branch/main/graph/badge.svg)](https://codecov.io/gh/yourusername/nudgebot-api)
-[![Go Reference](https://pkg.go.dev/badge/github.com/yourusername/nudgebot-api.svg)](https://pkg.go.dev/github.com/yourusername/nudgebot-api)
+[![CI/CD Pipeline](https://github.com/ducphamhoang/nudgebot-api/workflows/CI/CD%20Pipeline/badge.svg)](https://github.com/ducphamhoang/nudgebot-api/actions)
+[![Go Report Card](https://goreportcard.com/badge/github.com/ducphamhoang/nudgebot-api)](https://goreportcard.com/report/github.com/ducphamhoang/nudgebot-api)
+[![Coverage Status](https://codecov.io/gh/ducphamhoang/nudgebot-api/branch/main/graph/badge.svg)](https://codecov.io/gh/ducphamhoang/nudgebot-api)
+[![Go Reference](https://pkg.go.dev/badge/github.com/ducphamhoang/nudgebot-api.svg)](https://pkg.go.dev/github.com/ducphamhoang/nudgebot-api)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 NudgeBot is an intelligent, conversational task assistant built for the Telegram platform that revolutionizes personal productivity through proactive task management, smart scheduling, and persistent accountability features.
@@ -101,7 +101,7 @@ Telegram → Webhook → Command Processor → Event Bus → Domain Services →
 
 ```bash
 # Clone and start development environment
-git clone https://github.com/yourusername/nudgebot-api.git
+git clone https://github.com/ducphamhoang/nudgebot-api.git
 cd nudgebot-api
 make dev
 
@@ -114,7 +114,7 @@ make dev
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/yourusername/nudgebot-api.git
+   git clone https://github.com/ducphamhoang/nudgebot-api.git
    cd nudgebot-api
    ```
 
@@ -558,8 +558,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - 📧 **Email**: support@nudgebot.com
 - 💬 **Discord**: [Join our community](https://discord.gg/nudgebot)
-- 🐛 **Issues**: [GitHub Issues](https://github.com/yourusername/nudgebot-api/issues)
-- 📖 **Wiki**: [GitHub Wiki](https://github.com/yourusername/nudgebot-api/wiki)
+- 🐛 **Issues**: [GitHub Issues](https://github.com/ducphamhoang/nudgebot-api/issues)
+- 📖 **Wiki**: [GitHub Wiki](https://github.com/ducphamhoang/nudgebot-api/wiki)
 
 ---
 

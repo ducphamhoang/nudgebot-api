@@ -7,7 +7,6 @@ import (
 
 	"nudgebot-api/internal/config"
 	"nudgebot-api/internal/events"
-	"nudgebot-api/internal/mocks"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -52,8 +51,8 @@ func TestChatbotService_HandleTaskCreated(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Setup
 			logger := zaptest.NewLogger(t)
-			mockEventBus := mocks.NewMockEventBus()
-			mockChatbotService := createMockChatbotService(t, mockEventBus, logger)
+			mockEventBus := events.NewMockEventBus()
+			_ = createMockChatbotService(t, mockEventBus, logger)
 
 			// Wait for service to initialize subscriptions
 			time.Sleep(50 * time.Millisecond)
@@ -141,8 +140,8 @@ func TestChatbotService_HandleTaskListResponse(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Setup
 			logger := zaptest.NewLogger(t)
-			mockEventBus := mocks.NewMockEventBus()
-			mockChatbotService := createMockChatbotService(t, mockEventBus, logger)
+			mockEventBus := events.NewMockEventBus()
+			_ = createMockChatbotService(t, mockEventBus, logger)
 
 			// Wait for service to initialize subscriptions
 			time.Sleep(50 * time.Millisecond)
@@ -212,8 +211,8 @@ func TestChatbotService_HandleTaskActionResponse(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Setup
 			logger := zaptest.NewLogger(t)
-			mockEventBus := mocks.NewMockEventBus()
-			mockChatbotService := createMockChatbotService(t, mockEventBus, logger)
+			mockEventBus := events.NewMockEventBus()
+			_ = createMockChatbotService(t, mockEventBus, logger)
 
 			// Wait for service to initialize subscriptions
 			time.Sleep(50 * time.Millisecond)
@@ -235,8 +234,8 @@ func TestChatbotService_HandleTaskActionResponse(t *testing.T) {
 func TestChatbotService_HandleReminderDue(t *testing.T) {
 	// Setup
 	logger := zaptest.NewLogger(t)
-	mockEventBus := mocks.NewMockEventBus()
-	mockChatbotService := createMockChatbotService(t, mockEventBus, logger)
+	mockEventBus := events.NewMockEventBus()
+	_ = createMockChatbotService(t, mockEventBus, logger)
 
 	// Wait for service to initialize subscriptions
 	time.Sleep(50 * time.Millisecond)
@@ -262,7 +261,7 @@ func TestChatbotService_HandleReminderDue(t *testing.T) {
 func TestChatbotService_EventSubscriptions(t *testing.T) {
 	// Setup
 	logger := zaptest.NewLogger(t)
-	mockEventBus := mocks.NewMockEventBus()
+	mockEventBus := events.NewMockEventBus()
 
 	// Create service (this should set up subscriptions)
 	_ = createMockChatbotService(t, mockEventBus, logger)
@@ -288,8 +287,8 @@ func TestChatbotService_EventSubscriptions(t *testing.T) {
 func TestChatbotService_HandleTaskParsed_Updated(t *testing.T) {
 	// Test that handleTaskParsed now delegates to TaskCreated events
 	logger := zaptest.NewLogger(t)
-	mockEventBus := mocks.NewMockEventBus()
-	mockChatbotService := createMockChatbotService(t, mockEventBus, logger)
+	mockEventBus := events.NewMockEventBus()
+	_ = createMockChatbotService(t, mockEventBus, logger)
 
 	// Wait for service to initialize subscriptions
 	time.Sleep(50 * time.Millisecond)
@@ -321,8 +320,8 @@ func TestChatbotService_HandleTaskParsed_Updated(t *testing.T) {
 func TestChatbotService_Integration_MessageFlow(t *testing.T) {
 	// Integration test simulating the complete message flow
 	logger := zaptest.NewLogger(t)
-	mockEventBus := mocks.NewMockEventBus()
-	mockChatbotService := createMockChatbotService(t, mockEventBus, logger)
+	mockEventBus := events.NewMockEventBus()
+	_ = createMockChatbotService(t, mockEventBus, logger)
 
 	// Wait for service to initialize
 	time.Sleep(50 * time.Millisecond)
@@ -488,7 +487,7 @@ func TestChatbotService_EventValidation(t *testing.T) {
 func TestChatbotService_ErrorHandling(t *testing.T) {
 	// Test error handling in event processors
 	logger := zaptest.NewLogger(t)
-	mockEventBus := mocks.NewMockEventBus()
+	mockEventBus := events.NewMockEventBus()
 
 	// Create service
 	mockChatbotService := createMockChatbotService(t, mockEventBus, logger)

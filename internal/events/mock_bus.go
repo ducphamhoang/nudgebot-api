@@ -1,14 +1,13 @@
-package mocks
+package events
 
 import (
+	"fmt"
 	"sync"
 	"testing"
 	"time"
-
-	"nudgebot-api/internal/events"
 )
 
-//go:generate mockgen -source=../events/bus.go -destination=event_bus_mocks.go -package=mocks
+//go:generate mockgen -source=../events/bus.go -destination=event_bus_mocks.go -package=events
 
 // MockEventBus provides an in-memory implementation of EventBus for testing
 type MockEventBus struct {
@@ -16,6 +15,8 @@ type MockEventBus struct {
 	publishedEvents  map[string][]interface{}
 	mutex            sync.RWMutex
 	callbackHandlers map[string]func(interface{})
+	errors           []error
+	synchronousMode  bool
 }
 
 // NewMockEventBus creates a new MockEventBus instance
@@ -51,14 +52,20 @@ func (m *MockEventBus) Unsubscribe(topic string, handler interface{}) error {
 	defer m.mutex.Unlock()
 
 	if handlers, exists := m.subscriptions[topic]; exists {
-		for i, h := range handlers {
+		// Collect indices to remove (iterate backwards to avoid index issues)
+		var indicesToRemove []int
+		for i := len(handlers) - 1; i >= 0; i-- {
 			// Simple comparison - in a real implementation this would need better handler matching
-			if h == handler {
-				// Remove handler from slice
-				m.subscriptions[topic] = append(handlers[:i], handlers[i+1:]...)
-				break
+			if handlers[i] == handler {
+				indicesToRemove = append(indicesToRemove, i)
 			}
 		}
+
+		// Remove all matching handlers
+		for _, idx := range indicesToRemove {
+			handlers = append(handlers[:idx], handlers[idx+1:]...)
+		}
+		m.subscriptions[topic] = handlers
 	}
 
 	return nil
@@ -78,7 +85,13 @@ func (m *MockEventBus) Publish(topic string, event interface{}) error {
 	// Trigger handlers if they exist
 	if handlers, exists := m.subscriptions[topic]; exists {
 		for _, handler := range handlers {
-			go m.invokeHandler(handler, event)
+			if m.synchronousMode {
+				// Run synchronously for testing
+				m.invokeHandler(handler, event)
+			} else {
+				// Run asynchronously
+				go m.invokeHandler(handler, event)
+			}
 		}
 	}
 
@@ -96,6 +109,13 @@ func (m *MockEventBus) Close() error {
 	m.callbackHandlers = make(map[string]func(interface{}))
 
 	return nil
+}
+
+// SetSynchronousMode enables or disables synchronous event handling
+func (m *MockEventBus) SetSynchronousMode(enabled bool) {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	m.synchronousMode = enabled
 }
 
 // GetPublishedEvents returns published events for a topic
@@ -166,45 +186,65 @@ func (m *MockEventBus) SimulateEventDelivery(topic string, event interface{}) {
 func (m *MockEventBus) invokeHandler(handler interface{}, event interface{}) {
 	defer func() {
 		if r := recover(); r != nil {
-			// Log panic but don't crash the test
+			// Log panic details for debugging
+			m.mutex.Lock()
+			m.errors = append(m.errors, fmt.Errorf("handler panic: %v", r))
+			m.mutex.Unlock()
 		}
 	}()
 
+	handlerInvoked := false
 	switch h := handler.(type) {
-	case func(events.MessageReceived):
-		if e, ok := event.(events.MessageReceived); ok {
+	case func(MessageReceived):
+		if e, ok := event.(MessageReceived); ok {
 			h(e)
+			handlerInvoked = true
 		}
-	case func(events.TaskParsed):
-		if e, ok := event.(events.TaskParsed); ok {
+	case func(TaskParsed):
+		if e, ok := event.(TaskParsed); ok {
 			h(e)
+			handlerInvoked = true
 		}
-	case func(events.TaskCreated):
-		if e, ok := event.(events.TaskCreated); ok {
+	case func(TaskCreated):
+		if e, ok := event.(TaskCreated); ok {
 			h(e)
+			handlerInvoked = true
 		}
-	case func(events.TaskListRequested):
-		if e, ok := event.(events.TaskListRequested); ok {
+	case func(TaskListRequested):
+		if e, ok := event.(TaskListRequested); ok {
 			h(e)
+			handlerInvoked = true
 		}
-	case func(events.TaskListResponse):
-		if e, ok := event.(events.TaskListResponse); ok {
+	case func(TaskListResponse):
+		if e, ok := event.(TaskListResponse); ok {
 			h(e)
+			handlerInvoked = true
 		}
-	case func(events.TaskActionRequested):
-		if e, ok := event.(events.TaskActionRequested); ok {
+	case func(TaskActionRequested):
+		if e, ok := event.(TaskActionRequested); ok {
 			h(e)
+			handlerInvoked = true
 		}
-	case func(events.TaskActionResponse):
-		if e, ok := event.(events.TaskActionResponse); ok {
+	case func(TaskActionResponse):
+		if e, ok := event.(TaskActionResponse); ok {
 			h(e)
+			handlerInvoked = true
 		}
-	case func(events.ReminderDue):
-		if e, ok := event.(events.ReminderDue); ok {
+	case func(ReminderDue):
+		if e, ok := event.(ReminderDue); ok {
 			h(e)
+			handlerInvoked = true
 		}
 	case func(interface{}):
 		h(event)
+		handlerInvoked = true
+	}
+
+	// Log type mismatches for debugging
+	if !handlerInvoked {
+		m.mutex.Lock()
+		m.errors = append(m.errors, fmt.Errorf("type mismatch: handler type does not match event type %T", event))
+		m.mutex.Unlock()
 	}
 }
 
@@ -271,9 +311,9 @@ func (h *MockEventHandler) Reset() {
 // Factory methods for creating test events
 
 // CreateMessageReceivedEvent creates a test MessageReceived event
-func CreateMessageReceivedEvent(userID, chatID, text string) events.MessageReceived {
-	return events.MessageReceived{
-		Event:       events.NewEvent(),
+func CreateMessageReceivedEvent(userID, chatID, text string) MessageReceived {
+	return MessageReceived{
+		Event:       NewEvent(),
 		UserID:      userID,
 		ChatID:      chatID,
 		MessageText: text,
@@ -281,18 +321,18 @@ func CreateMessageReceivedEvent(userID, chatID, text string) events.MessageRecei
 }
 
 // CreateTaskParsedEvent creates a test TaskParsed event
-func CreateTaskParsedEvent(userID string, taskData events.ParsedTask) events.TaskParsed {
-	return events.TaskParsed{
-		Event:      events.NewEvent(),
+func CreateTaskParsedEvent(userID string, taskData ParsedTask) TaskParsed {
+	return TaskParsed{
+		Event:      NewEvent(),
 		UserID:     userID,
 		ParsedTask: taskData,
 	}
 }
 
 // CreateReminderDueEvent creates a test ReminderDue event
-func CreateReminderDueEvent(taskID, userID, chatID string) events.ReminderDue {
-	return events.ReminderDue{
-		Event:  events.NewEvent(),
+func CreateReminderDueEvent(taskID, userID, chatID string) ReminderDue {
+	return ReminderDue{
+		Event:  NewEvent(),
 		TaskID: taskID,
 		UserID: userID,
 		ChatID: chatID,
@@ -300,9 +340,9 @@ func CreateReminderDueEvent(taskID, userID, chatID string) events.ReminderDue {
 }
 
 // CreateTaskActionEvent creates a test TaskActionRequested event
-func CreateTaskActionEvent(userID, chatID, taskID, action string) events.TaskActionRequested {
-	return events.TaskActionRequested{
-		Event:  events.NewEvent(),
+func CreateTaskActionEvent(userID, chatID, taskID, action string) TaskActionRequested {
+	return TaskActionRequested{
+		Event:  NewEvent(),
 		UserID: userID,
 		ChatID: chatID,
 		TaskID: taskID,
@@ -311,18 +351,18 @@ func CreateTaskActionEvent(userID, chatID, taskID, action string) events.TaskAct
 }
 
 // CreateTaskListRequestedEvent creates a test TaskListRequested event
-func CreateTaskListRequestedEvent(userID, chatID string) events.TaskListRequested {
-	return events.TaskListRequested{
-		Event:  events.NewEvent(),
+func CreateTaskListRequestedEvent(userID, chatID string) TaskListRequested {
+	return TaskListRequested{
+		Event:  NewEvent(),
 		UserID: userID,
 		ChatID: chatID,
 	}
 }
 
 // CreateTaskCreatedEvent creates a test TaskCreated event
-func CreateTaskCreatedEvent(taskID, userID, title, priority string) events.TaskCreated {
-	return events.TaskCreated{
-		Event:     events.NewEvent(),
+func CreateTaskCreatedEvent(taskID, userID, title, priority string) TaskCreated {
+	return TaskCreated{
+		Event:     NewEvent(),
 		TaskID:    taskID,
 		UserID:    userID,
 		Title:     title,
@@ -406,19 +446,19 @@ func eventsEqual(a, b interface{}) bool {
 	// This is a simple implementation - in a real scenario you might want
 	// to use reflection or implement custom comparison logic
 	switch eventA := a.(type) {
-	case events.MessageReceived:
-		if eventB, ok := b.(events.MessageReceived); ok {
+	case MessageReceived:
+		if eventB, ok := b.(MessageReceived); ok {
 			return eventA.UserID == eventB.UserID &&
 				eventA.ChatID == eventB.ChatID &&
 				eventA.MessageText == eventB.MessageText
 		}
-	case events.TaskParsed:
-		if eventB, ok := b.(events.TaskParsed); ok {
+	case TaskParsed:
+		if eventB, ok := b.(TaskParsed); ok {
 			return eventA.UserID == eventB.UserID &&
 				eventA.ParsedTask.Title == eventB.ParsedTask.Title
 		}
-	case events.TaskActionRequested:
-		if eventB, ok := b.(events.TaskActionRequested); ok {
+	case TaskActionRequested:
+		if eventB, ok := b.(TaskActionRequested); ok {
 			return eventA.UserID == eventB.UserID &&
 				eventA.TaskID == eventB.TaskID &&
 				eventA.Action == eventB.Action
