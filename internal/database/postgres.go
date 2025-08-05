@@ -41,9 +41,22 @@ func NewPostgresConnection(cfg config.DatabaseConfig) (*gorm.DB, error) {
 }
 
 func HealthCheck(db *gorm.DB) error {
+    if db == nil {
+        return fmt.Errorf("database instance is nil")
+    }
+    
+    // Check if GORM DB is properly initialized
+    if db.Statement == nil {
+        return fmt.Errorf("database is not properly initialized")
+    }
+    
     sqlDB, err := db.DB()
     if err != nil {
         return fmt.Errorf("failed to get underlying sql.DB: %w", err)
+    }
+
+    if sqlDB == nil {
+        return fmt.Errorf("underlying sql.DB is nil")
     }
 
     if err := sqlDB.Ping(); err != nil {

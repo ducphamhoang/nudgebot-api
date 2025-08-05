@@ -27,7 +27,11 @@ func (h *HealthHandler) Check(c *gin.Context) {
     statusCode := http.StatusOK
 
     // Check database connection
-    if err := database.HealthCheck(h.db); err != nil {
+    if h.db == nil {
+        h.logger.Error("Database is nil")
+        status = "error"
+        statusCode = http.StatusServiceUnavailable
+    } else if err := database.HealthCheck(h.db); err != nil {
         h.logger.Error("Database health check failed", "error", err)
         status = "error"
         statusCode = http.StatusServiceUnavailable

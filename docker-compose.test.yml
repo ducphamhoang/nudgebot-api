@@ -1,0 +1,139 @@
+version: '3.8'
+
+services:
+  # Test database for integration tests
+  postgres-test:
+    image: postgres:15-alpine
+    container_name: nudgebot-test-db
+    environment:
+      POSTGRES_DB: test_nudgebot
+      POSTGRES_USER: test_user
+      POSTGRES_PASSWORD: test_pass
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "5433:5432"  # Different port to avoid conflicts with main DB
+    volumes:
+      - test_postgres_data:/var/lib/postgresql/data
+      - ./internal/database/migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test_user -d test_nudgebot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - test-network
+
+  # Redis for testing caching and sessions
+  redis-test:
+    image: redis:7-alpine
+    container_name: nudgebot-test-redis
+    ports:
+      - "6380:6379"  # Different port to avoid conflicts
+    volumes:
+      - test_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - test-network
+
+  # Test environment for the application
+  app-test:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    container_name: nudgebot-test-app
+    environment:
+      # Test environment variables
+      ENV: test
+      DB_HOST: postgres-test
+      DB_PORT: 5432
+      DB_USER: test_user
+      DB_PASSWORD: test_pass
+      DB_NAME: test_nudgebot
+      REDIS_HOST: redis-test
+      REDIS_PORT: 6379
+      LOG_LEVEL: debug
+      
+      # Test API keys (mock values)
+      TELEGRAM_BOT_TOKEN: test_telegram_token
+      GEMMA_API_KEY: test_gemma_key
+      GEMMA_API_URL: http://mock-llm:8080
+      
+      # Test-specific configurations
+      TEST_MODE: true
+      DISABLE_AUTH: true
+      ENABLE_DEBUG_ROUTES: true
+    ports:
+      - "8081:8080"  # Different port for testing
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_healthy
+    volumes:
+      - ./configs:/app/configs:ro
+      - ./logs:/app/logs
+    networks:
+      - test-network
+    profiles:
+      - full-test  # Only start with specific profile
+
+  # Mock LLM service for testing
+  mock-llm:
+    build:
+      context: .
+      dockerfile: Dockerfile.mock-llm
+    container_name: nudgebot-mock-llm
+    ports:
+      - "8082:8080"
+    environment:
+      - MOCK_MODE=true
+      - RESPONSE_DELAY=100ms
+    networks:
+      - test-network
+    profiles:
+      - full-test
+
+  # Test tools container
+  test-tools:
+    image: postgres:15-alpine
+    container_name: nudgebot-test-tools
+    volumes:
+      - ./scripts:/scripts:ro
+      - ./test-data:/test-data:ro
+    networks:
+      - test-network
+    profiles:
+      - tools
+    command: tail -f /dev/null  # Keep container running
+
+volumes:
+  test_postgres_data:
+    driver: local
+  test_redis_data:
+    driver: local
+
+networks:
+  test-network:
+    driver: bridge
+    name: nudgebot-test-network
+
+# Usage Examples:
+# 
+# Basic test database only:
+#   docker-compose -f docker-compose.test.yml up -d postgres-test redis-test
+#
+# Full test environment:
+#   docker-compose -f docker-compose.test.yml --profile full-test up -d
+#
+# With test tools:
+#   docker-compose -f docker-compose.test.yml --profile tools up -d test-tools
+#
+# Clean test environment:
+#   docker-compose -f docker-compose.test.yml down -v
+#
+# Integration tests:
+#   make test-db-setup && make test-integration && make test-db-teardown
