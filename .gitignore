@@ -1,26 +1,37 @@
-# Binaries
+# Go build artifacts
 *.exe
 *.exe~
 *.dll
 *.so
 *.dylib
+
+# Go compiled binaries (project-specific)
 main
+server
+nudgebot-api
 
-# Test binary
+# Go test artifacts
 *.test
-
-# Output of the go coverage tool
 *.out
+*.prof
+
+# Go coverage files
+coverage.txt
+coverage.html
+c.out
+
+# Go workspace file
+go.work
+go.work.sum
 
 # Dependency directories
 vendor/
 
-# Go workspace file
-go.work
-
 # Environment files
 .env
 .env.local
+.env.test
+.env.production
 
 # IDE files
 .vscode/
@@ -28,19 +39,41 @@ go.work
 *.swp
 *.swo
 *~
+.project
+.settings/
 
 # OS files
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
 
 # Logs
 *.log
-
-# Docker
-.dockerignore
+logs/
 
 # Temporary files
 tmp/
 temp/
-server
-server
+.tmp/
+
+# Debug files
+debug
+debug.test
+
+# Air live reload
+.air.toml
+tmp/
+
+# Generated mocks (will be regenerated)
+/mocks/*.go
+!/mocks/generate.go
+
+# Temporary documentation files (move to docs/ if needed)
+*_SUMMARY.md
+*_IMPLEMENTATION.md
+*_ERROR_HANDLING.md
+demo_error_handling.go
