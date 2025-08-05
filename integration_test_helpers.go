@@ -15,6 +15,7 @@ import (
 	"nudgebot-api/internal/database"
 	"nudgebot-api/internal/events"
 	"nudgebot-api/internal/mocks"
+	"nudgebot-api/internal/nudge"
 
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
@@ -412,8 +413,12 @@ func WaitForDatabaseReady(db *gorm.DB, timeout time.Duration) error {
 
 // RunDatabaseMigrations runs database migrations for testing
 func RunDatabaseMigrations(db *gorm.DB) error {
-	// In a real implementation, this would run actual migrations
-	// For testing purposes, we'll assume tables are created automatically
+	// Run the actual migrations using the nudge package
+	if err := nudge.MigrateWithValidation(db); err != nil {
+		return fmt.Errorf("failed to run database migrations: %w", err)
+	}
+	
+	log.Println("Database migrations completed successfully")
 	return nil
 }
 
@@ -573,4 +578,32 @@ func ReportTestResults(t *testing.T, report TestReport) {
 	if len(report.Details) > 0 {
 		log.Printf("Details: %+v", report.Details)
 	}
+}
+
+// CreateTestTelegramWebhook generates a properly formatted Telegram webhook JSON payload for testing
+func CreateTestTelegramWebhook(userID, chatID, messageText string) []byte {
+	webhookJSON := fmt.Sprintf(`{
+		"update_id": 123456789,
+		"message": {
+			"message_id": 1,
+			"from": {
+				"id": %s,
+				"is_bot": false,
+				"first_name": "Test",
+				"last_name": "User",
+				"username": "testuser"
+			},
+			"chat": {
+				"id": %s,
+				"first_name": "Test",
+				"last_name": "User",
+				"username": "testuser",
+				"type": "private"
+			},
+			"date": %d,
+			"text": "%s"
+		}
+	}`, userID, chatID, time.Now().Unix(), messageText)
+	
+	return []byte(webhookJSON)
 }

@@ -1,6 +1,7 @@
 package chatbot
 
 import (
+	"crypto/md5"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -38,6 +39,14 @@ func (p *WebhookParser) ParseUpdate(updateData []byte) (*tgbotapi.Update, error)
 	return &update, nil
 }
 
+// telegramIDToUUID converts a Telegram numeric ID to a deterministic UUID
+func telegramIDToUUID(telegramID int64) string {
+	// Create a deterministic UUID based on the Telegram ID
+	hash := md5.Sum([]byte(fmt.Sprintf("telegram_id_%d", telegramID)))
+	return fmt.Sprintf("%x-%x-%x-%x-%x",
+		hash[0:4], hash[4:6], hash[6:8], hash[8:10], hash[10:16])
+}
+
 // ExtractMessage converts a Telegram message to domain Message struct
 func (p *WebhookParser) ExtractMessage(update *tgbotapi.Update) (*Message, error) {
 	if update == nil {
@@ -68,8 +77,8 @@ func (p *WebhookParser) ExtractMessage(update *tgbotapi.Update) (*Message, error
 
 	return &Message{
 		ID:          common.ID(strconv.Itoa(msg.MessageID)),
-		UserID:      common.UserID(strconv.FormatInt(msg.From.ID, 10)),
-		ChatID:      common.ChatID(strconv.FormatInt(msg.Chat.ID, 10)),
+		UserID:      common.UserID(telegramIDToUUID(msg.From.ID)),
+		ChatID:      common.ChatID(telegramIDToUUID(msg.Chat.ID)),
 		Text:        text,
 		Timestamp:   time.Unix(int64(msg.Date), 0),
 		MessageType: messageType,
@@ -181,7 +190,7 @@ func (p *WebhookParser) GetUserID(update *tgbotapi.Update) (common.UserID, error
 		return "", fmt.Errorf("no user information found in update")
 	}
 
-	return common.UserID(strconv.FormatInt(userID, 10)), nil
+	return common.UserID(telegramIDToUUID(userID)), nil
 }
 
 // GetChatID extracts chat ID from update
@@ -200,5 +209,5 @@ func (p *WebhookParser) GetChatID(update *tgbotapi.Update) (common.ChatID, error
 		return "", fmt.Errorf("no chat information found in update")
 	}
 
-	return common.ChatID(strconv.FormatInt(chatID, 10)), nil
+	return common.ChatID(telegramIDToUUID(chatID)), nil
 }

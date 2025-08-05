@@ -74,7 +74,6 @@ func (m *MockEventBus) Unsubscribe(topic string, handler interface{}) error {
 // Publish implements the EventBus interface
 func (m *MockEventBus) Publish(topic string, event interface{}) error {
 	m.mutex.Lock()
-	defer m.mutex.Unlock()
 
 	// Store published event
 	if m.publishedEvents[topic] == nil {
@@ -82,16 +81,23 @@ func (m *MockEventBus) Publish(topic string, event interface{}) error {
 	}
 	m.publishedEvents[topic] = append(m.publishedEvents[topic], event)
 
-	// Trigger handlers if they exist
+	// Get handlers to invoke
+	var handlersToInvoke []interface{}
 	if handlers, exists := m.subscriptions[topic]; exists {
-		for _, handler := range handlers {
-			if m.synchronousMode {
-				// Run synchronously for testing
-				m.invokeHandler(handler, event)
-			} else {
-				// Run asynchronously
-				go m.invokeHandler(handler, event)
-			}
+		handlersToInvoke = make([]interface{}, len(handlers))
+		copy(handlersToInvoke, handlers)
+	}
+
+	m.mutex.Unlock()
+
+	// Trigger handlers outside of the mutex to avoid deadlocks
+	for _, handler := range handlersToInvoke {
+		if m.synchronousMode {
+			// Run synchronously for testing
+			m.invokeHandler(handler, event)
+		} else {
+			// Run asynchronously
+			go m.invokeHandler(handler, event)
 		}
 	}
 

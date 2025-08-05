@@ -62,10 +62,11 @@ test-unit: generate-mocks
 	$(GOTEST) -v -timeout $(TEST_TIMEOUT) ./pkg/...
 	@echo "✅ Unit tests completed"
 
-# Run integration tests with build tag
+# Run integration tests with build tag (requires Docker for testcontainers)
 test-integration: test-db-setup
 	@echo "🔧 Running integration tests..."
-	$(GOTEST) -v -timeout $(TEST_TIMEOUT) -tags=$(INTEGRATION_TAG) .
+	@echo "ℹ️  Note: Integration tests require Docker to be running for testcontainers"
+	CGO_ENABLED=1 $(GOTEST) -v -timeout=5m -tags=$(INTEGRATION_TAG) ./integration/...
 	@echo "✅ Integration tests completed"
 
 # Run all tests (unit + integration)
@@ -106,8 +107,16 @@ test-db-setup:
 	@echo "🗄️  Setting up test database..."
 	docker-compose -f docker-compose.test.yml up -d postgres-test
 	@echo "⏳ Waiting for database to be ready..."
-	@timeout 30 bash -c 'until docker-compose -f docker-compose.test.yml exec -T postgres-test pg_isready -U test_user -d test_nudgebot; do sleep 1; done'
-	@echo "✅ Test database ready"
+	@for i in $$(seq 1 30); do \
+		if docker-compose -f docker-compose.test.yml exec -T postgres-test pg_isready -U test_user -d test_nudgebot 2>/dev/null; then \
+			echo "✅ Test database ready"; \
+			exit 0; \
+		fi; \
+		echo "Waiting... ($$i/30)"; \
+		sleep 1; \
+	done; \
+	echo "❌ Database failed to start within 30 seconds"; \
+	exit 1
 
 # Teardown test database
 test-db-teardown:
