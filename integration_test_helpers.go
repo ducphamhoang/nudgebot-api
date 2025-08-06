@@ -6,6 +6,9 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"testing"
 	"time"
@@ -356,7 +359,7 @@ func MockGemmaAPIServer() *TestAPIServer {
 type TestAPIServer struct {
 	responses map[string]TestAPIResponse
 	port      int
-	server    interface{} // Would be *httptest.Server in real implementation
+	server    *httptest.Server
 }
 
 // TestAPIResponse represents a configured API response
@@ -376,22 +379,57 @@ func (tas *TestAPIServer) SetResponse(method, path string, statusCode int, body 
 	}
 }
 
-// Start starts the mock API server
+// Start starts the mock API server with dynamic port allocation
 func (tas *TestAPIServer) Start() error {
-	// In a real implementation, this would start an httptest.Server
-	// For now, we'll just mark it as started
-	tas.port = 8080 // Mock port
+	// Create a handler that serves configured responses
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		key := fmt.Sprintf("%s:%s", r.Method, r.URL.Path)
+		if response, exists := tas.responses[key]; exists {
+			for headerKey, headerValue := range response.Headers {
+				w.Header().Set(headerKey, headerValue)
+			}
+			w.WriteHeader(response.StatusCode)
+			w.Write([]byte(response.Body))
+		} else {
+			w.WriteHeader(http.StatusNotFound)
+			w.Write([]byte("Not Found"))
+		}
+	})
+
+	// Create server with dynamic port allocation (port 0)
+	tas.server = httptest.NewServer(handler)
+	
+	// Extract the actual port from the server URL
+	_, portStr, err := net.SplitHostPort(tas.server.Listener.Addr().String())
+	if err != nil {
+		tas.server.Close()
+		return fmt.Errorf("failed to parse server port: %w", err)
+	}
+	
+	// Parse port string to int
+	_, err = fmt.Sscanf(portStr, "%d", &tas.port)
+	if err != nil {
+		tas.server.Close()
+		return fmt.Errorf("failed to convert port to int: %w", err)
+	}
+	
 	return nil
 }
 
 // Stop stops the mock API server
 func (tas *TestAPIServer) Stop() error {
-	// In a real implementation, this would stop the httptest.Server
+	if tas.server != nil {
+		tas.server.Close()
+		tas.server = nil
+	}
 	return nil
 }
 
 // GetURL returns the base URL of the mock server
 func (tas *TestAPIServer) GetURL() string {
+	if tas.server != nil {
+		return tas.server.URL
+	}
 	return fmt.Sprintf("http://localhost:%d", tas.port)
 }
 
@@ -495,7 +533,7 @@ func RunLoadTest(t *testing.T, suite *IntegrationTestSuite, config LoadTestConfi
 func GetTestConfig() *config.Config {
 	return &config.Config{
 		Server: config.ServerConfig{
-			Port:         8080,
+			Port:         0, // Use dynamic port allocation for tests
 			Environment:  "test",
 			ReadTimeout:  30,
 			WriteTimeout: 30,

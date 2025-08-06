@@ -12,8 +12,6 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
-//go:generate mockgen -source=../chatbot/provider.go -destination=chatbot_provider_mocks.go -package=mocks
-
 // MockTelegramProvider implements the TelegramProvider interface for testing
 type MockTelegramProvider struct {
 	mutex              sync.RWMutex
