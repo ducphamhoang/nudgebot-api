@@ -63,7 +63,7 @@ test-unit: generate-mocks
 	@echo "✅ Unit tests completed"
 
 # Run integration tests with build tag (requires Docker for testcontainers)
-test-integration: test-db-setup
+test-integration:
 	@echo "🔧 Running integration tests..."
 	@echo "ℹ️  Note: Integration tests require Docker to be running for testcontainers"
 	CGO_ENABLED=1 $(GOTEST) -v -timeout=5m -tags=$(INTEGRATION_TAG) ./integration/...

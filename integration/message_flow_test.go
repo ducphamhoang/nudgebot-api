@@ -33,6 +33,8 @@ import (
 )
 
 // setupTestDatabase sets up a PostgreSQL test database using testcontainers
+// TODO: Refactor to use the centralized SetupTestDatabase function from integration_test_helpers.go
+// The centralized function returns a *TestContainer with additional functionality
 func setupTestDatabase(t *testing.T) (*gorm.DB, func()) {
 	ctx := context.Background()
 
@@ -179,9 +181,12 @@ func TestMessageFlowIntegration(t *testing.T) {
 	nudgeService, err := nudge.NewNudgeService(eventBus, zapLogger, nudgeRepo)
 	require.NoError(t, err, "Failed to create nudge service")
 
-	// Ensure services are initialized (avoid "declared but not used" errors)
-	_ = llmService
-	_ = nudgeService
+	// Verify all services are properly initialized
+	require.NotNil(t, llmService, "LLM service should be initialized")
+	require.NotNil(t, chatbotService, "Chatbot service should be initialized")
+	require.NotNil(t, nudgeService, "Nudge service should be initialized")
+
+	t.Log("All services initialized successfully")
 
 	// Create webhook handler
 	webhookHandler := handlers.NewWebhookHandler(chatbotService, loggerInstance)
@@ -315,16 +320,17 @@ func TestMessageFlowIntegrationWithInvalidMessage(t *testing.T) {
 	}
 
 	chatbotService, err := chatbot.NewChatbotServiceWithProvider(eventBus, zapLogger, stubTelegramProvider, chatbotConfig)
-	require.NoError(t, err)
+	require.NoError(t, err, "Failed to create chatbot service")
 
 	nudgeRepo := nudge.NewGormNudgeRepository(db, zapLogger)
 
 	nudgeService, err := nudge.NewNudgeService(eventBus, zapLogger, nudgeRepo)
-	require.NoError(t, err)
+	require.NoError(t, err, "Failed to create nudge service")
 
-	// Ensure services are initialized
-	_ = llmService
-	_ = nudgeService
+	// Verify all services are properly initialized
+	require.NotNil(t, llmService, "LLM service should be initialized")
+	require.NotNil(t, chatbotService, "Chatbot service should be initialized")
+	require.NotNil(t, nudgeService, "Nudge service should be initialized")
 
 	webhookHandler := handlers.NewWebhookHandler(chatbotService, loggerInstance)
 
