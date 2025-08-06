@@ -4,7 +4,6 @@ package integration
 
 import (
 	"bytes"
-	"context"
 	"crypto/md5"
 	"fmt"
 	"net/http"
@@ -16,7 +15,6 @@ import (
 	"nudgebot-api/internal/chatbot"
 	"nudgebot-api/internal/common"
 	"nudgebot-api/internal/config"
-	"nudgebot-api/internal/database"
 	"nudgebot-api/internal/events"
 	"nudgebot-api/internal/llm"
 	"nudgebot-api/internal/nudge"
@@ -26,65 +24,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
-	"gorm.io/gorm"
 )
-
-// TestContainer manages the lifecycle of a test database container
-type TestContainer struct {
-	Container interface{} // testcontainers.Container
-	DB        *gorm.DB
-	Config    config.DatabaseConfig
-	ctx       context.Context
-}
-
-// setupTestDatabase sets up a PostgreSQL test database using testcontainers
-// This is a consolidated version that combines the functionality from both
-// integration_test_helpers.go and the original setupTestDatabase function
-func setupTestDatabase(t *testing.T) (*TestContainer, func()) {
-	// Import testcontainers packages here as needed
-	// Note: This is a simplified version to avoid circular imports
-	ctx := context.Background()
-
-	// For now, create a mock implementation that satisfies the interface
-	// In a real scenario, we would use the actual testcontainers setup
-	// This will be updated when the import structure is properly resolved
-	
-	// Mock database config for testing
-	dbConfig := config.DatabaseConfig{
-		Host:            "localhost",
-		Port:            5432, // This would be dynamic in real implementation
-		User:            "test_user",
-		Password:        "test_password",
-		DBName:          "test_nudgebot",
-		SSLMode:         "disable",
-		MaxOpenConns:    10,
-		MaxIdleConns:    5,
-		ConnMaxLifetime: 300,
-	}
-
-	// Connect to database (this would use testcontainers in real implementation)
-	db, err := database.NewPostgresConnection(dbConfig)
-	require.NoError(t, err, "Failed to connect to test database")
-
-	testContainer := &TestContainer{
-		Container: nil, // Would be actual container in real implementation
-		DB:        db,
-		Config:    dbConfig,
-		ctx:       ctx,
-	}
-
-	cleanup := func() {
-		if db != nil {
-			sqlDB, _ := db.DB()
-			if sqlDB != nil {
-				sqlDB.Close()
-			}
-		}
-		// Would terminate container in real implementation
-	}
-
-	return testContainer, cleanup
-}
 
 // telegramIDToUUID converts a Telegram numeric ID to a deterministic UUID for testing
 func telegramIDToUUID(telegramID int64) string {
@@ -94,40 +34,12 @@ func telegramIDToUUID(telegramID int64) string {
 		hash[0:4], hash[4:6], hash[6:8], hash[8:10], hash[10:16])
 }
 
-// createTestTelegramWebhook creates a test Telegram webhook payload
-func createTestTelegramWebhook(userID, chatID, messageText string) []byte {
-	webhookJSON := fmt.Sprintf(`{
-		"update_id": 123456789,
-		"message": {
-			"message_id": 1,
-			"from": {
-				"id": %s,
-				"is_bot": false,
-				"first_name": "Test",
-				"last_name": "User",
-				"username": "testuser"
-			},
-			"chat": {
-				"id": %s,
-				"first_name": "Test",
-				"last_name": "User",
-				"username": "testuser",
-				"type": "private"
-			},
-			"date": %d,
-			"text": "%s"
-		}
-	}`, userID, chatID, time.Now().Unix(), messageText)
-
-	return []byte(webhookJSON)
-}
-
 // TestMessageFlowIntegration tests the complete webhook-to-database flow
 func TestMessageFlowIntegration(t *testing.T) {
 	// Setup test database
-	testContainer, cleanup := setupTestDatabase(t)
+	testContainer, cleanup := SetupTestDatabase(t)
 	defer cleanup()
-	
+
 	db := testContainer.DB
 
 	// Run database migrations
@@ -190,7 +102,7 @@ func TestMessageFlowIntegration(t *testing.T) {
 	expectedUserID := telegramIDToUUID(int64(testTelegramUserID))
 	expectedChatID := telegramIDToUUID(int64(testTelegramChatID))
 
-	webhookPayload := createTestTelegramWebhook(fmt.Sprintf("%d", testTelegramUserID), fmt.Sprintf("%d", testTelegramChatID), testMessage)
+	webhookPayload := createTestTelegramWebhook(int64(testTelegramChatID), testMessage, "")
 
 	// Create HTTP request
 	req, err := http.NewRequest("POST", "/webhook", bytes.NewBuffer(webhookPayload))
@@ -280,7 +192,7 @@ func TestMessageFlowIntegrationWithInvalidMessage(t *testing.T) {
 	// Set up test infrastructure (similar to main test)
 	testContainer, cleanup := setupTestDatabase(t)
 	defer cleanup()
-	
+
 	db := testContainer.DB
 
 	err := nudge.MigrateWithValidation(db)
