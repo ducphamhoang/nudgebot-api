@@ -133,8 +133,8 @@ test-essential-reliability: ensure-deps generate-mocks
 	GOPROXY=direct CGO_ENABLED=1 $(GOTEST) -v -timeout=5m -tags=$(INTEGRATION_TAG) ./test/essential/reliability/...
 	@echo "✅ Essential reliability tests completed"
 
-# Run all tests (unit + integration)
-test-all: test-unit test-integration
+# Run all tests (unit + integration + essential)
+test-all: test-unit test-integration test-essential
 	@echo "✅ All tests completed"
 
 # Run tests with coverage
@@ -381,7 +381,7 @@ help:
 	@echo "  test               Run unit tests (alias for test-unit)"
 	@echo "  test-unit          Run all unit tests"
 	@echo "  test-integration   Run integration tests"
-	@echo "  test-all           Run all tests (unit + integration)"
+	@echo "  test-all           Run all tests (unit + integration + essential)"
 	@echo "  test-coverage      Run tests with coverage"
 	@echo "  test-coverage-html Generate HTML coverage report"
 	@echo "  test-watch         Watch files and run tests on change"

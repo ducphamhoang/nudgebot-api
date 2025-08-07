@@ -220,6 +220,18 @@ jobs:
         ENV: test
       run: make test-integration
 
+    - name: 🎯 Run essential tests
+      env:
+        TEST_DB_HOST: localhost
+        TEST_DB_PORT: 5433
+        TEST_DB_USER: test_user
+        TEST_DB_PASSWORD: test_pass
+        TEST_DB_NAME: test_nudgebot
+        TEST_REDIS_HOST: localhost
+        TEST_REDIS_PORT: 6380
+        ENV: test
+      run: make test-essential
+
   # ==============================================================================
   # Build and Deployment Tests
   # ==============================================================================

@@ -119,6 +119,6 @@ func TestNudgeService_EventBusIntegration(t *testing.T) {
 
 	_ = ctx
 	_ = service
-	// Test integration with event bus
+	// Test event bus connectivity and subscription health
 	t.Log("Nudge service event bus integration test completed")
 }

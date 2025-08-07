@@ -28,6 +28,7 @@ import (
 	"nudgebot-api/internal/database"
 	"nudgebot-api/internal/events"
 	internalmocks "nudgebot-api/internal/mocks"
+	"nudgebot-api/internal/nudge"
 )
 
 // ==============================================================================
@@ -148,6 +149,10 @@ func SetupTestDatabase(t *testing.T) (*TestContainer, func()) {
 	// Connect to database
 	db, err := database.NewPostgresConnection(dbConfig)
 	require.NoError(t, err, "Failed to connect to test database")
+
+	// Run database migrations
+	err = nudge.MigrateWithValidation(db)
+	require.NoError(t, err, "Failed to run database migrations")
 
 	testContainer := &TestContainer{
 		Container: postgresContainer,

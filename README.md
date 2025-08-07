@@ -217,10 +217,32 @@ curl http://localhost:8080/docs
 
 ## 🧪 Testing
 
-### 🏃 Running Tests
+### � Essential Tests for Development
+
+The essential test suite provides fast, reliable feedback for development workflow. These tests are optimized for speed and deterministic execution:
 
 ```bash
-# Run all tests
+# Quick service validation (2-3 minutes) - Run after service changes
+make test-essential-services
+
+# End-to-end flow testing (3-4 minutes) - Run after API changes  
+make test-essential-flows
+
+# Comprehensive validation (5-6 minutes) - Run before commits
+make test-essential-suite
+
+# Full validation (10+ minutes) - Run before releases
+make test-all
+```
+
+**💡 Development Workflow**: Use essential tests for fast iteration during development. They provide comprehensive coverage of critical paths while maintaining quick execution times.
+
+**⚠️ Requirements**: Essential tests require Docker for testcontainers. Ensure Docker is running before executing test commands.
+
+### �🏃 Running Tests
+
+```bash
+# Run all tests (unit + integration + essential)
 make test-all
 
 # Unit tests only
@@ -254,10 +276,34 @@ make test-db-setup && make test-integration && make test-db-teardown
 
 ### 🎯 Test Structure
 
-- **Unit Tests**: `*_test.go` files alongside source code
-- **Integration Tests**: `integration_test.go` and `integration_tests_*.go`
+- **Essential Tests**: Fast integration tests in `/test/essential/` for development workflow
+- **Unit Tests**: `*_test.go` files alongside source code for module validation
+- **Integration Tests**: `integration_test.go` and `integration_tests_*.go` for comprehensive coverage
 - **Mocks**: Generated in `internal/mocks/` using GoMock
-- **Test Helpers**: `integration_test_helpers.go` for common utilities
+- **Test Helpers**: Shared utilities in `/test/essential/helpers/`
+
+### 🔧 Troubleshooting Tests
+
+**Docker Not Running**
+```bash
+# Start Docker service
+sudo systemctl start docker
+```
+
+**Port Conflicts**
+```bash
+# Find and kill conflicting processes
+sudo lsof -i :5432
+sudo kill -9 <PID>
+```
+
+**Container Cleanup**
+```bash
+# Clean up test containers
+docker container prune -f
+```
+
+For more troubleshooting guidance, see `docs/impl_plan/test_overall/essential_test_status.md`.
 
 ## 🔧 Development
 
