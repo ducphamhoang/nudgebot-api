@@ -549,10 +549,11 @@ func CreateTestReminder(db *gorm.DB, taskID common.TaskID, reminderTime time.Tim
 	reminder := map[string]interface{}{
 		"id":            reminderID,
 		"task_id":       taskID,
-		"reminder_time": reminderTime,
-		"status":        "pending",
-		"created_at":    time.Now(),
-		"updated_at":    time.Now(),
+		"user_id":       "test-user-id",
+		"chat_id":       "test-chat-id",
+		"scheduled_at":  reminderTime,
+		"sent_at":       nil,
+		"reminder_type": "initial",
 	}
 
 	return db.Table("reminders").Create(reminder).Error

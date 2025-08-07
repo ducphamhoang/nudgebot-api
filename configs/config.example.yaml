@@ -1,0 +1,36 @@
+server:
+  port: 8080
+  environment: development
+  read_timeout: 30
+  write_timeout: 30
+
+database:
+  host: localhost
+  port: 5432
+  user: postgres
+  password: postgres
+  dbname: nudgebot
+  sslmode: disable
+  max_open_conns: 25
+  max_idle_conns: 5
+  conn_max_lifetime: 300
+
+chatbot:
+  webhook_url: "/api/v1/telegram/webhook"
+  token: "" # Set via environment variable CHATBOT_TOKEN
+  timeout: 30
+
+llm:
+  api_endpoint: "https://generativelanguage.googleapis.com/v1beta/models/gemma-2-27b-it:generateContent"
+  api_key: "" # Set via environment variable LLM_API_KEY
+  timeout: 30
+  max_retries: 3
+  model: "gemma-2-27b-it"
+
+events:
+  buffer_size: 1000
+  worker_count: 10
+
+log:
+  level: info
+  format: json

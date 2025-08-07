@@ -8,7 +8,65 @@
 
 NudgeBot is an intelligent, conversational task assistant built for the Telegram platform that revolutionizes personal productivity through proactive task management, smart scheduling, and persistent accountability features.
 
-## ✨ Features
+## 📖 Usage Guide
+
+### 🔄 Development Workflow
+
+Common tasks during development:
+
+```bash
+# Daily development cycle
+make dev                    # Start development environment
+make test-essential-services # Quick test (35 seconds)
+# ... make your changes ...
+make test-essential-services # Verify changes
+make dev-stop               # Stop when done
+
+# Before committing
+make test-all               # Full test suite
+make lint                   # Check code quality
+make precommit              # All pre-commit checks
+
+# Restart everything (when things get weird)
+make dev-stop
+make clean
+make setup
+make dev
+```
+
+### 💻 Available Commands
+
+```bash
+# Setup and Development
+make setup              # Initial setup (run once after cloning)
+make dev                # Start development environment
+make dev-stop           # Stop development environment
+make dev-logs           # View application logs
+
+# Building and Running
+make build              # Build the application
+make run                # Run the application locally
+make clean              # Clean build artifacts
+
+# Testing (Essential for Development)
+make test-essential-services  # Quick service tests (35s)
+make test-essential-flows     # End-to-end flow tests (3-4 min)
+make test-essential-suite     # Comprehensive validation (5-6 min)
+make test-all                # Full test suite (10+ min)
+
+# Code Quality
+make lint               # Run linters
+make fmt                # Format code
+make precommit          # Pre-commit checks
+
+# Docker
+make docker-up          # Start Docker services
+make docker-down        # Stop Docker services
+make docker-logs        # View service logs
+
+# Help
+make help               # Show all available commands
+```
 
 ### 🎯 Core Capabilities
 - **🔄 Proactive Task Management**: Goes beyond simple reminders with intelligent follow-up nudges
@@ -92,17 +150,49 @@ Telegram → Webhook → Command Processor → Event Bus → Domain Services →
 
 ### 📋 Prerequisites
 
-- **Go 1.21+**: [Download Go](https://golang.org/dl/)
-- **Docker & Docker Compose**: [Install Docker](https://docs.docker.com/get-docker/)
-- **Make**: Build tool for running commands
-- **Git**: Version control
+Before you start, ensure you have the following installed:
+
+- **Go 1.21+**: [Download Go](https://golang.org/dl/) - Check with `go version`
+- **Docker & Docker Compose**: [Install Docker](https://docs.docker.com/get-docker/) - Check with `docker --version`
+- **Make**: Build automation tool
+  - **Linux/macOS**: Usually pre-installed
+  - **Windows**: Install via [Chocolatey](https://chocolatey.org/): `choco install make`
+- **Git**: Version control - Check with `git --version`
+
+### 🚨 Quick Troubleshooting
+
+**Having issues?** Try these quick fixes:
+
+```bash
+# If setup fails:
+make clean && make setup
+
+# If containers fail to start:
+docker-compose down && docker-compose up -d
+
+# If port 8080 is busy:
+sudo lsof -i :8080  # Find what's using the port
+# Or change port: SERVER_PORT=8081 make dev
+
+# If database connection fails:
+make dev-stop && make dev  # Restart everything
+```
+
+For detailed troubleshooting, see the [🔍 Troubleshooting section](#-troubleshooting-common-issues) below.
 
 ### ⚡ One-Minute Setup
 
+Clone the repository and start the development environment:
+
 ```bash
-# Clone and start development environment
+# 1. Clone the repository
 git clone https://github.com/ducphamhoang/nudgebot-api.git
 cd nudgebot-api
+
+# 2. Run initial setup (installs dependencies, generates mocks, creates config)
+make setup
+
+# 3. Start all services (PostgreSQL database + API server)
 make dev
 
 # 🎉 Your NudgeBot API is now running!
@@ -110,93 +200,283 @@ make dev
 # 📚 API docs: http://localhost:8080/docs
 ```
 
-### 🔧 Manual Development Setup
+That's it! The application is now running with:
+- API server on `http://localhost:8080`
+- PostgreSQL database on `localhost:5432`
+- All dependencies automatically installed and configured
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/ducphamhoang/nudgebot-api.git
-   cd nudgebot-api
-   ```
+### 🔧 Manual Setup (Step by Step)
 
-2. **📝 Configure environment**
-   ```bash
-   # Copy example environment file
-   cp configs/config.example.yaml configs/config.yaml
-   
-   # Edit configuration with your settings
-   # Set Telegram bot token, database credentials, etc.
-   ```
+If you prefer more control or encounter issues with the quick setup:
 
-3. **🐳 Start services with Docker**
-   ```bash
-   # Start all services (PostgreSQL, Redis, API)
-   make dev
-   
-   # Or manually with Docker Compose
-   docker-compose up -d
-   ```
+#### 1. Clone and Enter Directory
+```bash
+git clone https://github.com/ducphamhoang/nudgebot-api.git
+cd nudgebot-api
+```
 
-4. **✅ Verify setup**
+#### 2. Install Go Dependencies
+```bash
+# Download and verify Go modules
+go mod download
+go mod verify
+
+# Generate required mocks for testing
+make generate-mocks
+```
+
+#### 3. Configure Environment (Optional)
+```bash
+# The application works with default settings, but you can customize:
+cp configs/config.yaml configs/config.local.yaml
+
+# Edit configs/config.local.yaml if needed:
+# - Set your Telegram bot token for Telegram integration
+# - Set LLM API key for AI features
+# - Modify database connection settings
+```
+
+#### 4. Start Services
+```bash
+# Option A: Full development environment (recommended)
+make dev
+
+# Option B: Just the database (if you want to run the app manually)
+docker-compose up postgres -d
+
+# Option C: Everything manually (without Docker)
+# Start your own PostgreSQL on localhost:5432 with:
+# - Database: nudgebot
+# - User: postgres  
+# - Password: postgres
+```
+
+#### 5. Run the Application
+```bash
+# If using make dev, skip this step (already running)
+
+# To run manually:
+make run
+
+# Or build first, then run:
+make build
+./main
+```
+
+#### 6. Verify Everything Works
+```bash
+# Check application health
+curl http://localhost:8080/health
+
+# Should return:
+# {"status":"ok","timestamp":"2025-08-07T10:00:00Z","services":{"database":"healthy"}}
+
+# Check if database is accessible
+curl http://localhost:8080/health/db
+```
+
+### 🏠 Local Development Without Docker
+
+If you prefer not to use Docker:
+
+#### 1. Install PostgreSQL Locally
+```bash
+# Ubuntu/Debian
+sudo apt-get install postgresql postgresql-contrib
+
+# macOS (with Homebrew)
+brew install postgresql
+brew services start postgresql
+
+# Windows (with Chocolatey)
+choco install postgresql
+```
+
+#### 2. Create Database
+```bash
+# Connect to PostgreSQL
+sudo -u postgres psql
+
+# Create database and user
+CREATE DATABASE nudgebot;
+CREATE USER postgres WITH PASSWORD 'postgres';
+GRANT ALL PRIVILEGES ON DATABASE nudgebot TO postgres;
+\q
+```
+
+#### 3. Update Configuration
+```bash
+# Edit configs/config.yaml to match your local setup
+# Usually defaults work: localhost:5432, user: postgres, password: postgres
+```
+
+#### 4. Run Application
+```bash
+# Install dependencies and run
+make deps
+make run
+```
+
+### 🔍 Troubleshooting Common Issues
+
+#### "docker: command not found"
+```bash
+# Install Docker: https://docs.docker.com/get-docker/
+# Verify installation:
+docker --version
+docker-compose --version
+```
+
+#### "make: command not found"
+```bash
+# Linux/Ubuntu
+sudo apt-get install build-essential
+
+# macOS
+xcode-select --install
+
+# Windows
+choco install make
+```
+
+#### "Port 8080 already in use"
+```bash
+# Find what's using the port
+sudo lsof -i :8080
+# Kill the process or change port in configs/config.yaml
+
+# Or use a different port:
+SERVER_PORT=8081 make run
+```
+
+#### "Port 5432 already in use" (PostgreSQL conflict)
+```bash
+# If you have PostgreSQL already running locally:
+# Option 1: Stop local PostgreSQL
+sudo systemctl stop postgresql
+
+# Option 2: Use different port in docker-compose.yml
+# Change "5432:5432" to "5433:5432" and update config.yaml
+
+# Option 3: Use your existing PostgreSQL
+# Just run: make run (without make dev)
+```
+
+#### "Database connection failed"
+```bash
+# Check if PostgreSQL is running
+docker-compose ps
+
+# Check database logs
+docker-compose logs postgres
+
+# Reset database
+make docker-down
+make docker-up
+```
+
+#### Go Module Issues
+```bash
+# Clear module cache
+go clean -modcache
+
+# Re-download dependencies
+go mod download
+
+# Verify checksums
+go mod verify
+```
+
+### ⚙️ Environment Variables
+
+You can override any configuration using environment variables:
+
+```bash
+# Server configuration
+export SERVER_PORT=8081
+export SERVER_ENVIRONMENT=production
+
+# Database configuration
+export DATABASE_HOST=your-db-host
+export DATABASE_PASSWORD=your-secure-password
+
+# Telegram bot (optional, for Telegram integration)
+export CHATBOT_TOKEN=your-telegram-bot-token
+
+# LLM API (optional, for AI features)
+export LLM_API_KEY=your-llm-api-key
+
+# Run with custom environment
+make run
+```
+
+### 🎯 Next Steps
+
+Once the application is running:
+
+1. **✅ Verify Setup**: 
    ```bash
-   # Check health endpoint
+   # Check if everything is working
    curl http://localhost:8080/health
+   # Should return: {"status":"ok",...}
    
-   # Check logs
-   make dev-logs
+   # Check database connection
+   make test-essential-services
+   # Should show 15/16 tests passing
    ```
 
-### 🏠 Local Development (Without Docker)
+2. **📚 Explore the API**: 
+   - Health endpoint: `http://localhost:8080/health`
+   - Database health: `http://localhost:8080/health/db`
+   - API documentation: `http://localhost:8080/docs` (when available)
 
-1. **📦 Install dependencies**
+3. **🧪 Run Tests**: 
    ```bash
-   # Download Go modules
-   make deps
+   # Quick test to verify everything works
+   make test-essential-services  # ~35 seconds
    
-   # Generate mocks for testing
-   make generate-mocks
+   # Comprehensive testing
+   make test-all  # ~2-3 minutes
    ```
 
-2. **🗄️ Setup PostgreSQL**
-   ```bash
-   # Using Docker for database only
-   docker run --name nudgebot-postgres \
-     -e POSTGRES_DB=nudgebot \
-     -e POSTGRES_USER=postgres \
-     -e POSTGRES_PASSWORD=postgres \
-     -p 5432:5432 -d postgres:15-alpine
-   ```
+4. **📱 Optional: Set up Telegram Bot**: 
+   - See the "Telegram Bot Setup" section below
+   - Add your bot token with: `export CHATBOT_TOKEN=your-token`
 
-3. **🚀 Run the application**
+5. **🧠 Optional: Configure LLM**: 
+   - Add your LLM API key for AI features
+   - Export: `export LLM_API_KEY=your-api-key`
+
+6. **📖 Read Documentation**: 
+   - Architecture: `docs/architecture.md`
+   - MVP Features: `docs/mvp_prd.md`
+   - Development Guide: `docs/codebase.md`
+
+### 📱 Optional: Telegram Bot Setup
+
+To use NudgeBot with Telegram:
+
+1. **Create a Telegram Bot**:
+   - Message [@BotFather](https://t.me/botfather) on Telegram
+   - Send `/newbot` and follow the instructions
+   - Save your bot token
+
+2. **Configure the Bot**:
    ```bash
-   # Build and run
-   make build && ./main
+   # Set your bot token
+   export CHATBOT_TOKEN=your-bot-token-here
    
-   # Or directly
-   make run
+   # Restart the application
+   make dev-stop
+   make dev
    ```
 
-## 📖 Usage Guide
-
-### 🤖 Telegram Bot Setup
-
-1. **Create Telegram Bot**
+3. **Set Webhook** (for production):
    ```bash
-   # Message @BotFather on Telegram
-   /newbot
-   # Follow prompts to get your bot token
-   ```
-
-2. **Configure webhook**
-   ```bash
-   # Set webhook URL (replace with your domain)
    curl -X POST "https://api.telegram.org/bot<YOUR_BOT_TOKEN>/setWebhook" \
      -H "Content-Type: application/json" \
-     -d '{"url": "https://yourdomain.com/api/webhook"}'
+     -d '{"url": "https://yourdomain.com/api/v1/telegram/webhook"}'
    ```
-
-3. **Test the bot**
-   ```bash
-   # Send "/start" to your bot on Telegram
    # You should receive a welcome message
    ```
 

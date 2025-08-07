@@ -76,4 +76,17 @@ tmp/
 *_SUMMARY.md
 *_IMPLEMENTATION.md
 *_ERROR_HANDLING.md
+*progress*.md
+*COMPLETION*.md
+*failure*.md
 demo_error_handling.go
+
+# Local configuration files
+configs/config.local.yaml
+configs/config.*.yaml
+!configs/config.yaml
+!configs/config.example.yaml
+
+# Test execution logs
+test_execution_results.log
+*.log

@@ -3,6 +3,8 @@ package nudge
 import (
 	"fmt"
 
+	"nudgebot-api/internal/user"
+
 	"gorm.io/gorm"
 )
 
@@ -10,6 +12,7 @@ import (
 func RunMigrations(db *gorm.DB) error {
 	// Auto-migrate all nudge models
 	err := db.AutoMigrate(
+		&user.User{},
 		&Task{},
 		&Reminder{},
 		&NudgeSettings{},
@@ -105,7 +108,7 @@ func DropTables(db *gorm.DB) error {
 // ValidateMigrations checks if all required tables and indexes exist
 func ValidateMigrations(db *gorm.DB) error {
 	// Check if tables exist
-	requiredTables := []string{"tasks", "reminders", "nudge_settings"}
+	requiredTables := []string{"users", "tasks", "reminders", "nudge_settings"}
 
 	for _, table := range requiredTables {
 		var exists bool

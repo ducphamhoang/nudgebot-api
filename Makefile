@@ -1,4 +1,4 @@
-.PHONY: build run test lint docker-build docker-up docker-down clean generate-mocks regenerate-mocks test-unit test-integration test-essential test-essential-suite test-essential-flows test-essential-services test-essential-reliability lint-modules test-coverage test-coverage-html test-all test-db-setup test-db-teardown precommit test-watch help deps deps-quick ensure-deps
+.PHONY: build run test lint docker-build docker-up docker-down clean generate-mocks regenerate-mocks test-unit test-integration test-essential test-essential-suite test-essential-flows test-essential-services test-essential-reliability lint-modules test-coverage test-coverage-html test-all test-db-setup test-db-teardown precommit test-watch help deps deps-quick ensure-deps setup dev dev-stop dev-logs dev-rebuild
 
 # Go parameters
 GOCMD=go
@@ -308,6 +308,23 @@ db-migration-create:
 # Development Helpers
 # ==============================================================================
 
+# Initial setup for new clones
+setup:
+	@echo "🔧 Setting up NudgeBot development environment..."
+	@echo "📋 Checking prerequisites..."
+	@command -v docker >/dev/null 2>&1 || (echo "❌ Docker not found. Please install Docker first." && exit 1)
+	@command -v docker-compose >/dev/null 2>&1 || (echo "❌ Docker Compose not found. Please install Docker Compose first." && exit 1)
+	@echo "✅ Docker is available"
+	@echo "📦 Installing Go dependencies..."
+	@$(GOMOD) download
+	@$(GOMOD) verify
+	@echo "✅ Dependencies installed"
+	@echo "🎭 Generating mocks..."
+	@$(MAKE) generate-mocks
+	@echo "📝 Creating config from example..."
+	@if [ ! -f "configs/config.local.yaml" ]; then cp configs/config.example.yaml configs/config.local.yaml; echo "✅ Created configs/config.local.yaml"; else echo "ℹ️  configs/config.local.yaml already exists"; fi
+	@echo "🎉 Setup complete! Run 'make dev' to start the development environment."
+
 # Start development environment
 dev: docker-up
 	@echo "🚀 Development environment ready"
@@ -372,7 +389,12 @@ profile-mem:
 help:
 	@echo "🤖 NudgeBot API - Available Make Targets"
 	@echo ""
-	@echo "📋 Build and Run:"
+	@echo "� Quick Start:"
+	@echo "  setup              Initial setup for new repository clones"
+	@echo "  dev                Start development environment"
+	@echo "  dev-stop           Stop development environment"
+	@echo ""
+	@echo "�📋 Build and Run:"
 	@echo "  build              Build the application"
 	@echo "  run                Build and run the application"
 	@echo "  clean              Clean build artifacts"
