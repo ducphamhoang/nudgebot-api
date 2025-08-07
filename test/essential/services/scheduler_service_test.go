@@ -3,117 +3,159 @@
 package services
 
 import (
-    "context"
-    "testing"
-    "time"
+	"context"
+	"testing"
+	"time"
 
-    "go.uber.org/zap"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
 
-    "nudgebot-api/internal/events"
-    "nudgebot-api/internal/nudge"
-    "nudgebot-api/internal/scheduler"
-    "nudgebot-api/test/essential/helpers"
+	"nudgebot-api/internal/config"
+	"nudgebot-api/internal/events"
+	"nudgebot-api/internal/nudge"
+	"nudgebot-api/internal/scheduler"
+	"nudgebot-api/test/essential/helpers"
 )
 
 func TestSchedulerService_StartStop(t *testing.T) {
-    testContainer, cleanup := helpers.SetupTestDatabase()
-    defer cleanup()
+	testContainer, cleanup := helpers.SetupTestDatabase(t)
+	defer cleanup()
 
-    zapLogger, _ := zap.NewDevelopment()
-    eventBus := events.NewEventBus(zapLogger)
-    nudgeRepo := nudge.NewGormNudgeRepository(testContainer.DB, zapLogger)
+	zapLogger, _ := zap.NewDevelopment()
+	eventBus := events.NewEventBus(zapLogger)
+	nudgeRepo := nudge.NewGormNudgeRepository(testContainer.DB, zapLogger)
 
-    service := scheduler.NewSchedulerService(nudgeRepo, eventBus, zapLogger)
+	// Create scheduler config for testing
+	cfg := config.SchedulerConfig{
+		PollInterval:    5,
+		NudgeDelay:      60,
+		WorkerCount:     1,
+		ShutdownTimeout: 5,
+		Enabled:         true,
+	}
 
-    ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-    defer cancel()
+	service, err := scheduler.NewScheduler(cfg, nudgeRepo, eventBus, zapLogger)
+	require.NoError(t, err, "Failed to create scheduler service")
 
-    // Test service lifecycle
-    go service.Start(ctx)
-    time.Sleep(100 * time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 
-    // Service should start and stop cleanly
-    cancel()
-    time.Sleep(100 * time.Millisecond)
+	// Test service lifecycle
+	go service.Start(ctx)
+	time.Sleep(100 * time.Millisecond)
 
-    t.Log("Scheduler service start/stop test completed")
+	// Service should start and stop cleanly
+	cancel()
+	time.Sleep(100 * time.Millisecond)
+
+	t.Log("Scheduler service start/stop test completed")
 }
 
 func TestSchedulerService_ReminderProcessing(t *testing.T) {
-    testContainer, cleanup := helpers.SetupTestDatabase()
-    defer cleanup()
+	testContainer, cleanup := helpers.SetupTestDatabase(t)
+	defer cleanup()
 
-    zapLogger, _ := zap.NewDevelopment()
-    eventBus := events.NewEventBus(zapLogger)
-    nudgeRepo := nudge.NewGormNudgeRepository(testContainer.DB, zapLogger)
+	zapLogger, _ := zap.NewDevelopment()
+	eventBus := events.NewEventBus(zapLogger)
+	nudgeRepo := nudge.NewGormNudgeRepository(testContainer.DB, zapLogger)
 
-    service := scheduler.NewSchedulerService(nudgeRepo, eventBus, zapLogger)
+	// Create scheduler config for testing
+	cfg := config.SchedulerConfig{
+		PollInterval:    5,
+		NudgeDelay:      60,
+		WorkerCount:     1,
+		ShutdownTimeout: 5,
+		Enabled:         true,
+	}
 
-    // Create test data
-    chatID := int64(12345)
-    userID, err := helpers.CreateTestUser(testContainer.DB, chatID)
-    if err != nil {
-        t.Fatalf("Failed to create test user: %v", err)
-    }
+	service, err := scheduler.NewScheduler(cfg, nudgeRepo, eventBus, zapLogger)
+	require.NoError(t, err, "Failed to create scheduler service")
 
-    taskID, err := helpers.CreateTestTask(testContainer.DB, userID, "Test task")
-    if err != nil {
-        t.Fatalf("Failed to create test task: %v", err)
-    }
+	// Create test data
+	chatID := int64(12345)
+	userID, err := helpers.CreateTestUser(testContainer.DB, chatID)
+	if err != nil {
+		t.Fatalf("Failed to create test user: %v", err)
+	}
 
-    // Create overdue reminder
-    overdueTime := time.Now().Add(-1 * time.Hour)
-    err = helpers.CreateTestReminder(testContainer.DB, taskID, overdueTime)
-    if err != nil {
-        t.Fatalf("Failed to create test reminder: %v", err)
-    }
+	taskID, err := helpers.CreateTestTask(testContainer.DB, userID, "Test task")
+	if err != nil {
+		t.Fatalf("Failed to create test task: %v", err)
+	}
 
-    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-    defer cancel()
+	// Create overdue reminder
+	overdueTime := time.Now().Add(-1 * time.Hour)
+	err = helpers.CreateTestReminder(testContainer.DB, taskID, overdueTime)
+	if err != nil {
+		t.Fatalf("Failed to create test reminder: %v", err)
+	}
 
-    go service.Start(ctx)
-    time.Sleep(2 * time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
-    // Test reminder processing and nudge creation (US-04, US-06)
-    t.Log("Scheduler service reminder processing test completed")
+	go service.Start(ctx)
+	time.Sleep(2 * time.Second)
+
+	// Test reminder processing and nudge creation (US-04, US-06)
+	t.Log("Scheduler service reminder processing test completed")
 }
 
 func TestSchedulerService_ErrorRecovery(t *testing.T) {
-    testContainer, cleanup := helpers.SetupTestDatabase()
-    defer cleanup()
+	testContainer, cleanup := helpers.SetupTestDatabase(t)
+	defer cleanup()
 
-    zapLogger, _ := zap.NewDevelopment()
-    eventBus := events.NewEventBus(zapLogger)
-    nudgeRepo := nudge.NewGormNudgeRepository(testContainer.DB, zapLogger)
+	zapLogger, _ := zap.NewDevelopment()
+	eventBus := events.NewEventBus(zapLogger)
+	nudgeRepo := nudge.NewGormNudgeRepository(testContainer.DB, zapLogger)
 
-    service := scheduler.NewSchedulerService(nudgeRepo, eventBus, zapLogger)
+	// Create scheduler config for testing
+	cfg := config.SchedulerConfig{
+		PollInterval:    5,
+		NudgeDelay:      60,
+		WorkerCount:     1,
+		ShutdownTimeout: 5,
+		Enabled:         true,
+	}
 
-    ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-    defer cancel()
+	service, err := scheduler.NewScheduler(cfg, nudgeRepo, eventBus, zapLogger)
+	require.NoError(t, err, "Failed to create scheduler service")
 
-    go service.Start(ctx)
-    time.Sleep(100 * time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 
-    // Test error handling and recovery
-    t.Log("Scheduler service error recovery test completed")
+	go service.Start(ctx)
+	time.Sleep(100 * time.Millisecond)
+
+	// Test error handling and recovery
+	t.Log("Scheduler service error recovery test completed")
 }
 
 func TestSchedulerService_MetricsValidation(t *testing.T) {
-    testContainer, cleanup := helpers.SetupTestDatabase()
-    defer cleanup()
+	testContainer, cleanup := helpers.SetupTestDatabase(t)
+	defer cleanup()
 
-    zapLogger, _ := zap.NewDevelopment()
-    eventBus := events.NewEventBus(zapLogger)
-    nudgeRepo := nudge.NewGormNudgeRepository(testContainer.DB, zapLogger)
+	zapLogger, _ := zap.NewDevelopment()
+	eventBus := events.NewEventBus(zapLogger)
+	nudgeRepo := nudge.NewGormNudgeRepository(testContainer.DB, zapLogger)
 
-    service := scheduler.NewSchedulerService(nudgeRepo, eventBus, zapLogger)
+	// Create scheduler config for testing
+	cfg := config.SchedulerConfig{
+		PollInterval:    5,
+		NudgeDelay:      60,
+		WorkerCount:     1,
+		ShutdownTimeout: 5,
+		Enabled:         true,
+	}
 
-    ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-    defer cancel()
+	service, err := scheduler.NewScheduler(cfg, nudgeRepo, eventBus, zapLogger)
+	require.NoError(t, err, "Failed to create scheduler service")
 
-    go service.Start(ctx)
-    time.Sleep(100 * time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 
-    // Test metrics and monitoring validation
-    t.Log("Scheduler service metrics validation test completed")
+	go service.Start(ctx)
+	time.Sleep(100 * time.Millisecond)
+
+	// Test metrics and monitoring validation
+	t.Log("Scheduler service metrics validation test completed")
 }
