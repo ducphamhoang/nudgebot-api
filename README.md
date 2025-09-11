@@ -34,39 +34,21 @@ make setup
 make dev
 ```
 
-### 💻 Available Commands
+### 💻 Essential Commands
 
 ```bash
-# Setup and Development
+# Getting Started
 make setup              # Initial setup (run once after cloning)
 make dev                # Start development environment
+make test-essential-services  # Quick validation (35s)
+
+# Development Cycle
 make dev-stop           # Stop development environment
-make dev-logs           # View application logs
-
-# Building and Running
-make build              # Build the application
-make run                # Run the application locally
-make clean              # Clean build artifacts
-
-# Testing (Essential for Development)
-make test-essential-services  # Quick service tests (35s)
-make test-essential-flows     # End-to-end flow tests (3-4 min)
-make test-essential-suite     # Comprehensive validation (5-6 min)
-make test-all                # Full test suite (10+ min)
-
-# Code Quality
-make lint               # Run linters
-make fmt                # Format code
-make precommit          # Pre-commit checks
-
-# Docker
-make docker-up          # Start Docker services
-make docker-down        # Stop Docker services
-make docker-logs        # View service logs
-
-# Help
+make precommit          # Pre-commit checks (lint + test)
 make help               # Show all available commands
 ```
+
+> 📖 **For a complete list of all available commands**, see the [🛠️ Available Make Commands](#-available-make-commands) section below.
 
 ### 🎯 Core Capabilities
 - **🔄 Proactive Task Management**: Goes beyond simple reminders with intelligent follow-up nudges
@@ -894,68 +876,3 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
   <br>
   <em>Making productivity effortless, one nudge at a time</em>
 </div>
-
-# Testing
-make test         # Run tests
-make test-coverage # Run tests with coverage
-
-# Code Quality
-make lint         # Run linter
-make fmt          # Format code
-
-# Docker
-make docker-up    # Start Docker services
-make docker-down  # Stop Docker services
-make docker-logs  # View logs
-
-# Utilities
-make clean        # Clean build artifacts
-make tidy         # Tidy dependencies
-```
-
-## Configuration
-
-The application uses a hierarchical configuration system:
-
-1. **Default values** (defined in code)
-2. **Configuration file** (`configs/config.yaml`)
-3. **Environment variables** (override config file)
-
-### Environment Variables
-
-All configuration can be overridden using environment variables with the format `SECTION_KEY`:
-
-```bash
-SERVER_PORT=8080
-DATABASE_HOST=localhost
-DATABASE_PASSWORD=secretpassword
-```
-
-## API Endpoints
-
-### Health Check
-- **GET** `/health` - Application health status
-- **GET** `/api/v1/health` - API health status
-
-## Development Guidelines
-
-This project follows the coding standards outlined in `docs/rules.md`:
-
-- **Clean Architecture** with clear separation of concerns
-- **Interface-driven development** with dependency injection
-- **Comprehensive error handling** with context propagation
-- **Structured logging** with request correlation
-- **Test-driven development** with high coverage
-- **Security best practices** with input validation
-
-## Contributing
-
-1. Follow the coding standards in `docs/rules.md`
-2. Write tests for new functionality
-3. Ensure all tests pass: `make test`
-4. Run linting: `make lint`
-5. Format code: `make fmt`
-
-## License
-
-[License information to be added]
