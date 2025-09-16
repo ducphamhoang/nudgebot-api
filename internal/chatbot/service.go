@@ -53,10 +53,19 @@ func NewChatbotService(eventBus events.EventBus, logger *zap.Logger, cfg config.
 	// Subscribe to relevant events
 	service.setupEventSubscriptions()
 
-	// Setup webhook if configured
+	// Setup webhook if configured and looks like a full URL
 	if cfg.WebhookURL != "" {
-		if err := provider.SetWebhook(cfg.WebhookURL); err != nil {
-			logger.Warn("Failed to set webhook", zap.Error(err))
+		// Telegram requires a full HTTPS URL for webhooks (not a path).
+		// Only attempt to set the webhook automatically when the value
+		// appears to be a URL (starts with http/https). If a relative
+		// path is provided (e.g. "/api/v1/telegram/webhook"), skip
+		// automatic registration so local development isn't blocked.
+		if strings.HasPrefix(cfg.WebhookURL, "http://") || strings.HasPrefix(cfg.WebhookURL, "https://") {
+			if err := provider.SetWebhook(cfg.WebhookURL); err != nil {
+				logger.Warn("Failed to set webhook", zap.Error(err))
+			}
+		} else {
+			logger.Info("Skipping automatic webhook registration because configured webhook URL is not a full HTTP(S) URL", zap.String("webhook_url", cfg.WebhookURL))
 		}
 	}
 
