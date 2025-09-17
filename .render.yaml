@@ -1,0 +1,19 @@
+# Minimal Render service definition for nudgebot-api
+# Replace placeholder values with your real environment variables/secrets in the Render dashboard
+services:
+  - type: web
+    name: nudgebot-api
+    env: docker
+    plan: free
+    dockerfilePath: Dockerfile
+    branch: master
+    buildCommand: ""
+    startCommand: "./main"
+    envVars:
+      - key: SERVER_PORT
+        value: "8080"
+      - key: SERVER_ENVIRONMENT
+        value: "production"
+      # Add DB and secret env vars in Render dashboard (do NOT commit secrets here)
+    healthCheckPath: "/health"
+    autoDeploy: true

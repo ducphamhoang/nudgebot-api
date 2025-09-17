@@ -64,3 +64,24 @@ make dev
 ```
 
 For detailed documentation, see [README.md](README.md).
+
+## Deploying to Render
+
+If you plan to deploy to Render using the project `Dockerfile`, ensure the builder image Go version matches the project's `go.mod` toolchain.
+
+- Required Go version: `go 1.23.0` with toolchain `go1.24.5` (we use `golang:1.24.5-alpine` in the `Dockerfile`).
+- Recommended build approach: Deploy the repository to Render as a Docker web service so Render builds the image using the included `Dockerfile`.
+
+If you prefer Render's native Go build instead of Docker, set the Go version to `1.24.5` in Render's environment and use the following build command:
+
+```bash
+go mod download && CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main cmd/server/main.go
+```
+
+Start command (if running outside Docker):
+
+```bash
+./main
+```
+
+Do NOT store secrets in the repo. Add `DATABASE_*`, `CHATBOT_TOKEN`, `LLM_API_KEY`, etc. as environment variables in Render's dashboard.
