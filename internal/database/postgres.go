@@ -12,7 +12,9 @@ import (
 )
 
 func NewPostgresConnection(cfg config.DatabaseConfig) (*gorm.DB, error) {
-    dsn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
+    // Use prefer_simple_protocol to avoid server-side prepared statement name collisions
+    // which can surface as: ERROR: prepared statement "..." already exists (SQLSTATE 42P05)
+    dsn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s prefer_simple_protocol=true",
         cfg.Host, cfg.Port, cfg.User, cfg.Password, cfg.DBName, cfg.SSLMode)
 
     db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
