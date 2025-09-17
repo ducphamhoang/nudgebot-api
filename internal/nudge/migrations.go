@@ -1,24 +1,58 @@
 package nudge
 
 import (
+	"errors"
 	"fmt"
+	"strings"
+	"time"
 
 	"nudgebot-api/internal/user"
+	"nudgebot-api/pkg/logger"
 
 	"gorm.io/gorm"
 )
 
 // RunMigrations performs auto-migration for all nudge-related tables
 func RunMigrations(db *gorm.DB) error {
-	// Auto-migrate all nudge models
-	err := db.AutoMigrate(
-		&user.User{},
-		&Task{},
-		&Reminder{},
-		&NudgeSettings{},
-	)
-	if err != nil {
-		return fmt.Errorf("failed to auto-migrate nudge tables: %w", err)
+	// Auto-migrate all nudge models with retry/backoff
+	log := logger.New()
+
+	const maxAttempts = 3
+	baseDelay := 500 * time.Millisecond
+
+	var err error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		err = db.AutoMigrate(
+			&user.User{},
+			&Task{},
+			&Reminder{},
+			&NudgeSettings{},
+		)
+		if err == nil {
+			break
+		}
+
+		// If it's an invalid DB object error, fail immediately
+		if errors.Is(err, gorm.ErrInvalidDB) {
+			return fmt.Errorf("failed to auto-migrate nudge tables: %w", err)
+		}
+
+		// If Postgres 'relation already exists' error, log and continue
+		if strings.Contains(err.Error(), "already exists") || strings.Contains(err.Error(), "SQLSTATE 42P07") {
+			log.Warnw("AutoMigrate detected existing relation; continuing", "attempt", attempt, "error", err)
+			err = nil
+			break
+		}
+
+		// Otherwise, either retry (with backoff) or return the final error
+		if attempt < maxAttempts {
+			delay := baseDelay * time.Duration(1<<uint(attempt-1))
+			log.Infow("AutoMigrate failed; retrying", "attempt", attempt, "delay_ms", delay.Milliseconds(), "error", err)
+			time.Sleep(delay)
+			continue
+		}
+
+		return fmt.Errorf("failed to auto-migrate nudge tables after %d attempts: %w", maxAttempts, err)
 	}
 
 	// Create database indexes for performance

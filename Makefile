@@ -292,12 +292,15 @@ docker-restart: docker-down docker-up
 # Run database migrations (placeholder)
 db-migrate-up:
 	@echo "⬆️  Running database migrations..."
-	@echo "⚠️  Database migrations not implemented yet"
+	@echo "🟢 Running migrations using golang-migrate (docker)"
+	@test -n "$(DATABASE_URL)" || (echo "❌ DATABASE_URL must be set" && exit 1)
+	@docker run --rm -v $(PWD)/migrations:/migrations --network host migrate/migrate -path=/migrations -database "$(DATABASE_URL)" up
 
 # Rollback database migrations (placeholder)
 db-migrate-down:
 	@echo "⬇️  Rolling back database migrations..."
-	@echo "⚠️  Database migrations not implemented yet"
+	@test -n "$(DATABASE_URL)" || (echo "❌ DATABASE_URL must be set" && exit 1)
+	@docker run --rm -v $(PWD)/migrations:/migrations --network host migrate/migrate -path=/migrations -database "$(DATABASE_URL)" down 1
 
 # Create new migration (placeholder)
 db-migration-create:
